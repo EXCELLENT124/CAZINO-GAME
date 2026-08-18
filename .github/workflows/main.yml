@@ -1,0 +1,215 @@
+name: Build CAZINO GAME
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+
+  # =========================
+  # 1. TEST FLUTTER PROJECT
+  # =========================
+  test:
+    name: Test CAZINO GAME
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Check Flutter version
+        run: flutter --version
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Analyze project
+        run: flutter analyze
+
+      - name: Run tests
+        run: flutter test
+
+
+  # =========================
+  # 2. BUILD ANDROID
+  # =========================
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+
+      - name: Install Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build Android APK
+        run: flutter build apk --release
+
+      - name: Build Android App Bundle
+        run: flutter build appbundle --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: cazino-android-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Upload AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: cazino-android-aab
+          path: build/app/outputs/bundle/release/app-release.aab
+
+
+  # =========================
+  # 3. BUILD WEB
+  # =========================
+  build-web:
+    name: Build CAZINO Web
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build Flutter Web
+        run: flutter build web --release
+
+      - name: Upload Web Build
+        uses: actions/upload-artifact@v4
+        with:
+          name: cazino-web
+          path: build/web
+
+
+  # =========================
+  # 4. BUILD WINDOWS
+  # =========================
+  build-windows:
+    name: Build CAZINO Windows
+    runs-on: windows-latest
+    needs: test
+
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Enable Windows Desktop
+        run: flutter config --enable-windows-desktop
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build Windows
+        run: flutter build windows --release
+
+      - name: Upload Windows Build
+        uses: actions/upload-artifact@v4
+        with:
+          name: cazino-windows
+          path: build/windows/x64/runner/Release/
+
+
+  # =========================
+  # 5. BUILD iOS
+  # =========================
+  build-ios:
+    name: Build CAZINO iOS
+    runs-on: macos-latest
+    needs: test
+
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Install CocoaPods
+        run: |
+          cd ios
+          pod install
+          cd ..
+
+      - name: Build iOS
+        run: flutter build ios --release --no-codesign
+
+      - name: Upload iOS Build
+        uses: actions/upload-artifact@v4
+        with:
+          name: cazino-ios
+          path: build/ios/iphoneos/
+
+
+  # =========================
+  # BUILD COMPLETE
+  # =========================
+  build-complete:
+    name: CAZINO Build Complete
+    runs-on: ubuntu-latest
+    needs:
+      - build-android
+      - build-web
+      - build-windows
+      - build-ios
+
+    steps:
+      - name: Build Finished
+        run: |
+          echo "================================"
+          echo "CAZINO GAME BUILD COMPLETE"
+          echo "================================"
+          echo "Android APK generated"
+          echo "Android AAB generated"
+          echo "Web version generated"
+          echo "Windows version generated"
+          echo "iOS build generated"
+          
