@@ -63,18 +63,17 @@ class _SplashState extends State<SplashScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => const Scaffold(
+  Widget build(BuildContext context) => Scaffold(
           body: Center(
               child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Icon(Icons.style, size: 88, color: Color(0xffd4a72c)),
-        SizedBox(height: 18),
-        Text('CAZINO',
-            style: TextStyle(
-                fontSize: 42, letterSpacing: 8, fontWeight: FontWeight.w800)),
-        SizedBox(height: 8),
-        Text('THE TABLE IS YOURS'),
-        SizedBox(height: 28),
-        CircularProgressIndicator(),
+        ClipRRect(
+            borderRadius: BorderRadius.circular(28),
+            child: Image.asset('assets/branding/cazino_logo.png',
+                width: 240, height: 240, fit: BoxFit.cover)),
+        const SizedBox(height: 16),
+        const Text('THE TABLE IS YOURS'),
+        const SizedBox(height: 28),
+        const CircularProgressIndicator(),
       ])));
 }
 
@@ -100,8 +99,13 @@ class _LoginState extends State<LoginScreen> {
                       child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            const Icon(Icons.style,
-                                size: 64, color: Color(0xffd4a72c)),
+                            ClipRRect(
+                                borderRadius: BorderRadius.circular(20),
+                                child: Image.asset(
+                                    'assets/branding/cazino_logo.png',
+                                    width: 112,
+                                    height: 112,
+                                    fit: BoxFit.cover)),
                             const SizedBox(height: 12),
                             const Text('Welcome to CAZINO',
                                 style: TextStyle(
