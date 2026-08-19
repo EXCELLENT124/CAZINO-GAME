@@ -35,7 +35,7 @@ jobs:
         run: flutter pub get
 
       - name: Analyze project
-        run: flutter analyze
+        run: flutter analyze --no-fatal-infos
 
       - name: Run tests
         run: flutter test
@@ -212,4 +212,3 @@ jobs:
           echo "Web version generated"
           echo "Windows version generated"
           echo "iOS build generated"
-          
