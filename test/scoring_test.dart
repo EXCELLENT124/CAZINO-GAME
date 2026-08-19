@@ -3,14 +3,24 @@ import 'package:cazino/domain/models/game_card.dart';
 import 'package:test/test.dart';
 
 void main() {
-  test('official fixed cards total seven and majority categories total four', () {
+  test('fixed cards total seven and threshold categories complete 11', () {
     final fixed = <GameCard>[
       for (final suit in CardSuit.values) GameCard(1, suit),
       const GameCard(2, CardSuit.blackSpade),
       const GameCard(10, CardSuit.razer),
     ];
-    final filler = const [GameCard(3, CardSuit.blackSpade), GameCard(4, CardSuit.blackSpade)];
-    final result = const ScoringRules().score({'a': [...fixed, ...filler], 'b': const []});
+    final sixSpades = const [
+      GameCard(3, CardSuit.blackSpade),
+      GameCard(4, CardSuit.blackSpade),
+      GameCard(5, CardSuit.blackSpade),
+      GameCard(6, CardSuit.blackSpade),
+    ];
+    final filler =
+        List.generate(11, (_) => const GameCard(3, CardSuit.redHeart));
+    final result = const ScoringRules().score({
+      'a': [...fixed, ...sixSpades, ...filler],
+      'b': const []
+    });
     expect(result.breakdowns['a']!.aces, 4);
     expect(result.breakdowns['a']!.spyTwo, 1);
     expect(result.breakdowns['a']!.mummy, 2);
@@ -24,12 +34,13 @@ void main() {
     expect(result.winnerId, 'a');
   });
 
-  test('ties split most-cards and most-spades points one each', () {
-    final result = const ScoringRules().score({
-      'a': const [GameCard(3, CardSuit.blackSpade)],
-      'b': const [GameCard(4, CardSuit.blackSpade)],
-    });
+  test('exactly 20 cards and exactly 5 spades award one point each', () {
+    final pack = <GameCard>[
+      for (var rank = 1; rank <= 5; rank++) GameCard(rank, CardSuit.blackSpade),
+      ...List.generate(15, (_) => const GameCard(3, CardSuit.redHeart)),
+    ];
+    final result = const ScoringRules().score({'a': pack, 'b': const []});
     expect(result.breakdowns['a']!.mostCards, 1);
-    expect(result.breakdowns['b']!.mostSpades, 1);
+    expect(result.breakdowns['a']!.mostSpades, 1);
   });
 }

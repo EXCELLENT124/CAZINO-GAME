@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../data/repositories.dart';
 import '../domain/game/game_engine.dart';
@@ -7,11 +8,20 @@ import '../domain/models/game_card.dart';
 
 class AppController extends ChangeNotifier {
   AppController(this.repository);
-  final LocalDemoRepository repository;
+  final AppRepository repository;
   final GameEngine engine = GameEngine();
   GameState? game;
   String? demoActivePlayerId;
   final Map<String, String> demoPlayerNames = {};
+  Timer? _buildGraceTimer;
+  bool buildGraceActive = false;
+  int buildGraceSeconds = 0;
+  String? _pendingNextPlayerId;
+  String? onlineGameId;
+  int onlineGameVersion = 0;
+  String? onlineSyncError;
+  bool onlineMovePending = false;
+  bool get isOnlineMatch => onlineGameId != null;
   PlayerAccount? get user => repository.currentUser;
   String get gamePlayerId => demoActivePlayerId ?? user!.id;
 
@@ -26,17 +36,72 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    await repository.stopWatchingMatch();
     await repository.logout();
     game = null;
     notifyListeners();
   }
 
-  Future<void> challenge(String otherId) async {
-    await repository.challenge(user!.id, otherId);
+  Future<void> acceptOnlineChallenge(Challenge challenge) async {
+    final gameId = await repository.acceptChallenge(challenge.id);
+    await _openOnlineGame(challenge, gameId);
+  }
+
+  Future<void> joinOnlineChallenge(Challenge challenge) async {
+    final gameId = await repository.gameForChallenge(challenge.id);
+    await _openOnlineGame(challenge, gameId);
+  }
+
+  Future<void> _openOnlineGame(Challenge challenge, String gameId) async {
+    final proposed = engine.start(
+        challengerId: challenge.fromPlayerId, hostId: challenge.toPlayerId);
+    final loaded = await repository.initializeOrLoadMatch(gameId, proposed);
+    game = loaded.state;
+    onlineGameId = gameId;
+    onlineGameVersion = loaded.version;
+    demoActivePlayerId = user!.id;
+    for (final id in [challenge.fromPlayerId, challenge.toPlayerId]) {
+      demoPlayerNames[id] = id == user!.id
+          ? user!.displayName
+          : repository.players.where((p) => p.id == id)
+              .map((p) => p.displayName).firstOrNull ?? 'Opponent';
+    }
+    await repository.watchMatch(gameId, (state, version) {
+      if (version <= onlineGameVersion) return;
+      game = state;
+      onlineGameVersion = version;
+      onlineSyncError = null;
+      notifyListeners();
+    });
+    notifyListeners();
+  }
+
+  static const allowedStakes = [100, 150, 200, 250, 300, 350, 400, 500];
+  int get coinBalance => repository.coinBalance;
+  Future<void> challenge(String otherId, {int stake = 100}) async {
+    await repository.challenge(user!.id, otherId, stake: stake);
+    notifyListeners();
+  }
+
+  Future<void> addFriend(String otherId) async {
+    await repository.addFriend(otherId);
+    notifyListeners();
+  }
+
+  Future<void> refreshOnlinePlayers() async {
+    await repository.refreshSocial();
+    notifyListeners();
+  }
+
+  Future<void> watchChallenges() => repository.watchChallenges(notifyListeners);
+
+  Future<void> claimDailyCoins() async {
+    await repository.claimDailyCoins();
     notifyListeners();
   }
 
   void startDemoGame(String otherId) {
+    onlineGameId = null;
     game = engine.start(challengerId: user!.id, hostId: otherId);
     demoActivePlayerId = user!.id;
     demoPlayerNames[user!.id] = user!.displayName;
@@ -58,39 +123,116 @@ class AppController extends ChangeNotifier {
 
   void switchDemoPlayer() {
     if (game == null) return;
+    _cancelBuildGrace();
     demoActivePlayerId = game!.opponentOf(gamePlayerId);
     notifyListeners();
   }
 
   void throwCard(GameCard card) {
+    _ensureOnlineMoveReady();
     engine.throwCard(game!, gamePlayerId, card);
     _followTurn();
+    _publishOnlineMove();
   }
 
   void takeOff(GameCard card,
       [List<GameCard> tableCards = const [],
       List<TableBuild> builds = const []]) {
+    _ensureOnlineMoveReady();
     engine.takeOff(game!, gamePlayerId, card, tableCards, builds);
     _followTurn();
+    _publishOnlineMove();
   }
 
   void construct(GameCard card, List<GameCard> table, int target,
       [List<TableBuild> builds = const [],
       List<GameCard> opponentTopCards = const []]) {
+    _ensureOnlineMoveReady();
+    final actingPlayer = gamePlayerId;
     engine.construct(
-        game!, gamePlayerId, card, table, target, builds, opponentTopCards);
-    _followTurn();
+        game!, actingPlayer, card, table, target, builds, opponentTopCards);
+    _followTurnWithBuildGrace(actingPlayer, target);
+    _publishOnlineMove();
+  }
+
+  void continueBuild(
+      TableBuild build, List<GameCard> table, List<GameCard> opponentTopCards) {
+    _ensureOnlineMoveReady();
+    if (!buildGraceActive) {
+      throw const GameRuleException('Construction continuation window ended');
+    }
+    engine.continueBuild(game!, gamePlayerId, build, table, opponentTopCards);
+    notifyListeners();
+    _publishOnlineMove();
   }
 
   void stashBuild(GameCard card, TableBuild build) {
+    _ensureOnlineMoveReady();
     engine.stashBuild(game!, gamePlayerId, card, build);
     _followTurn();
+    _publishOnlineMove();
+  }
+
+  Future<void> _publishOnlineMove() async {
+    final id = onlineGameId;
+    if (id == null || game == null) return;
+    final expected = onlineGameVersion;
+    onlineMovePending = true;
+    try {
+      onlineGameVersion =
+          await repository.publishMatchState(id, game!, expected);
+      onlineSyncError = null;
+    } catch (error) {
+      onlineSyncError = 'Move was not synchronized: $error';
+    }
+    onlineMovePending = false;
+    notifyListeners();
+  }
+
+  void _ensureOnlineMoveReady() {
+    if (isOnlineMatch && onlineMovePending) {
+      throw const GameRuleException('Please wait for the previous move to synchronize');
+    }
   }
 
   void _followTurn() {
+    _cancelBuildGrace();
     if (game!.phase != GamePhase.finished) {
       demoActivePlayerId = game!.currentPlayerId;
     }
     notifyListeners();
+  }
+
+  void _followTurnWithBuildGrace(String playerId, int target) {
+    if (game!.phase != GamePhase.finished &&
+        engine.hasVisibleBuildContinuation(game!, playerId, target)) {
+      _pendingNextPlayerId = game!.currentPlayerId;
+      game!.currentPlayerId = playerId;
+      demoActivePlayerId = playerId;
+      buildGraceActive = true;
+      buildGraceSeconds = 10;
+      _buildGraceTimer?.cancel();
+      _buildGraceTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        buildGraceSeconds--;
+        if (buildGraceSeconds <= 0) {
+          final next = _pendingNextPlayerId!;
+          _cancelBuildGrace();
+          game!.currentPlayerId = next;
+          demoActivePlayerId = next;
+        }
+        notifyListeners();
+      });
+    } else {
+      _followTurn();
+    }
+    notifyListeners();
+  }
+
+  void _cancelBuildGrace() {
+    _buildGraceTimer?.cancel();
+    _buildGraceTimer = null;
+    buildGraceActive = false;
+    buildGraceSeconds = 0;
+    _pendingNextPlayerId = null;
   }
 }

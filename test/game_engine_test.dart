@@ -245,6 +245,33 @@ void main() {
     expect(state.hands['a'], equals(const [nine]));
   });
 
+  test('opponent raises simple 7 with hand 2 and loose 9 into strong 9', () {
+    final state = engine.start(challengerId: 'a', hostId: 'b');
+    const two = GameCard(2, CardSuit.blackSpade);
+    const retainedNine = GameCard(9, CardSuit.tree);
+    const looseNine = GameCard(9, CardSuit.redHeart);
+    state.hands['a']!
+      ..clear()
+      ..addAll(const [two, retainedNine]);
+    const simpleSeven = TableBuild(target: 7, ownerId: 'b', cards: [
+      GameCard(4, CardSuit.tree),
+      GameCard(3, CardSuit.blackSpade),
+    ]);
+    state.builds.add(simpleSeven);
+    state.looseTableCards.add(looseNine);
+
+    engine.construct(
+        state, 'a', two, const [looseNine], 9, const [simpleSeven]);
+
+    final strongNine = state.builds.single;
+    expect(strongNine.target, 9);
+    expect(strongNine.ownerId, 'a');
+    expect(strongNine.isStrong, isTrue);
+    expect(strongNine.cards.take(2).map((card) => card.rank), equals([4, 3]));
+    expect(strongNine.cards.map((card) => card.rank), equals([4, 3, 9, 2]));
+    expect(state.hands['a'], equals(const [retainedNine]));
+  });
+
   test('current build owner cannot raise their own simple build', () {
     final state = engine.start(challengerId: 'a', hostId: 'b');
     const two = GameCard(2, CardSuit.blackSpade);
@@ -336,7 +363,26 @@ void main() {
     expect(state.builds.single.isStrong, isTrue);
     expect(state.builds.single.isLocked, isTrue);
     expect(
-        state.builds.single.cards.map((card) => card.rank), equals([6, 1, 5]));
+        state.builds.single.cards.map((card) => card.rank), equals([6, 5, 1]));
+  });
+
+  test(
+      'new construction combination is descending regardless of selection order',
+      () {
+    final state = engine.start(challengerId: 'a', hostId: 'b');
+    const four = GameCard(4, CardSuit.tree);
+    const retainedNine = GameCard(9, CardSuit.redHeart);
+    const two = GameCard(2, CardSuit.blackSpade);
+    const three = GameCard(3, CardSuit.razer);
+    state.hands['a']!
+      ..clear()
+      ..addAll(const [four, retainedNine]);
+    state.looseTableCards.addAll(const [two, three]);
+
+    engine.construct(state, 'a', four, const [two, three], 9);
+
+    expect(
+        state.builds.single.cards.map((card) => card.rank), equals([4, 3, 2]));
   });
 
   test(
@@ -421,6 +467,68 @@ void main() {
     expect(state.builds.single.isLocked, isTrue);
     expect(state.builds.single.cards.map((card) => card.rank),
         equals([6, 4, 10, 7, 3]));
+  });
+
+  test('owner continues strong 10 with loose 8 and opponent top 2', () {
+    final state = engine.start(challengerId: 'lebo', hostId: 'amina');
+    const retainedTen = GameCard(10, CardSuit.tree);
+    const looseEight = GameCard(8, CardSuit.blackSpade);
+    const opponentTwo = GameCard(2, CardSuit.razer);
+    state.hands['lebo']!
+      ..clear()
+      ..add(retainedTen);
+    state.looseTableCards.add(looseEight);
+    state.captured['amina']!.add(opponentTwo);
+    const strongTen = TableBuild(
+        target: 10,
+        ownerId: 'lebo',
+        isStrong: true,
+        isLocked: true,
+        cards: [
+          GameCard(6, CardSuit.tree),
+          GameCard(4, CardSuit.redHeart),
+          GameCard(10, CardSuit.blackSpade),
+        ]);
+    state.builds.add(strongTen);
+
+    expect(engine.hasVisibleBuildContinuation(state, 'lebo', 10), isTrue);
+    engine.continueBuild(
+        state, 'lebo', strongTen, const [looseEight], const [opponentTwo]);
+
+    expect(state.looseTableCards, isEmpty);
+    expect(state.captured['amina'], isEmpty);
+    expect(state.builds.single.cards.map((card) => card.rank),
+        equals([6, 4, 10, 8, 2]));
+    expect(state.builds.single.isStrong, isTrue);
+    expect(state.builds.single.isLocked, isTrue);
+  });
+
+  test('new construction group is descending regardless of selection source',
+      () {
+    final state = engine.start(challengerId: 'a', hostId: 'b');
+    const handFour = GameCard(4, CardSuit.tree);
+    const retainedNine = GameCard(9, CardSuit.redHeart);
+    const tableTwo = GameCard(2, CardSuit.blackSpade);
+    const opponentThree = GameCard(3, CardSuit.razer);
+    state.hands['a']!
+      ..clear()
+      ..addAll(const [handFour, retainedNine]);
+    state.looseTableCards.add(tableTwo);
+    state.captured['b']!.add(opponentThree);
+    const existingNine =
+        TableBuild(target: 9, ownerId: 'a', isStrong: true, cards: [
+      GameCard(6, CardSuit.redHeart),
+      GameCard(3, CardSuit.blackSpade),
+    ]);
+    state.builds.add(existingNine);
+
+    engine.construct(state, 'a', handFour, const [tableTwo], 9,
+        const [existingNine], const [opponentThree]);
+
+    expect(state.builds.single.cards.take(2).map((card) => card.rank),
+        equals([6, 3]));
+    expect(state.builds.single.cards.skip(2).map((card) => card.rank),
+        equals([4, 3, 2]));
   });
 
   test(
@@ -600,6 +708,68 @@ void main() {
     expect(state.captured['a'], hasLength(4));
   });
 
+  test('later chow packets are appended without rearranging earlier packets',
+      () {
+    final state = engine.start(challengerId: 'a', hostId: 'b');
+    const firstNine = GameCard(9, CardSuit.tree);
+    const secondNine = GameCard(9, CardSuit.redHeart);
+    const six = GameCard(6, CardSuit.blackSpade);
+    const three = GameCard(3, CardSuit.razer);
+    const five = GameCard(5, CardSuit.tree);
+    const four = GameCard(4, CardSuit.redHeart);
+    state.hands['a']!
+      ..clear()
+      ..addAll(const [firstNine, secondNine]);
+
+    state.looseTableCards.addAll(const [six, three]);
+    engine.takeOff(state, 'a', firstNine, const [six, three]);
+    expect(state.captured['a']!.map((card) => card.rank), equals([6, 3, 9]));
+
+    state.currentPlayerId = 'a';
+    state.looseTableCards.addAll(const [five, four]);
+    engine.takeOff(state, 'a', secondNine, const [five, four]);
+
+    expect(state.captured['a']!.map((card) => card.rank),
+        equals([6, 3, 9, 5, 4, 9]));
+  });
+
+  test('packet-preserving chow order applies to every rank Ace through 10', () {
+    for (var target = 1; target <= 10; target++) {
+      final state = engine.start(challengerId: 'a', hostId: 'b');
+      final firstTakingCard = GameCard(target, CardSuit.tree);
+      final secondTakingCard = GameCard(target, CardSuit.redHeart);
+      state.hands['a']!
+        ..clear()
+        ..addAll([firstTakingCard, secondTakingCard]);
+
+      final firstPacket = target == 1
+          ? const [GameCard(1, CardSuit.blackSpade)]
+          : [
+              GameCard(target - 1, CardSuit.blackSpade),
+              const GameCard(1, CardSuit.razer),
+            ];
+      state.looseTableCards.addAll(firstPacket);
+      engine.takeOff(state, 'a', firstTakingCard, firstPacket);
+      final preservedFirstPacket = List<GameCard>.of(state.captured['a']!);
+
+      state.currentPlayerId = 'a';
+      final secondPacket = target == 1
+          ? const [GameCard(1, CardSuit.razer)]
+          : [
+              GameCard(target - 1, CardSuit.razer),
+              const GameCard(1, CardSuit.blackSpade),
+            ];
+      state.looseTableCards.addAll(secondPacket);
+      engine.takeOff(state, 'a', secondTakingCard, secondPacket);
+
+      expect(state.captured['a']!.take(preservedFirstPacket.length),
+          orderedEquals(preservedFirstPacket),
+          reason: 'Earlier packet changed when chowing rank $target');
+      expect(state.captured['a']!.last, secondTakingCard,
+          reason: 'Taking rank $target must top its newest packet');
+    }
+  });
+
   test('chow also takes every consecutive matching opponent top card', () {
     final state = engine.start(challengerId: 'a', hostId: 'b');
     state.hands['a']!
@@ -665,6 +835,22 @@ void main() {
     expect(state.phase, GamePhase.roundTwo);
     expect(state.hands['a'], hasLength(10));
     expect(state.hands['b'], hasLength(10));
+    expect(state.currentPlayerId, 'a');
+  });
+
+  test('round one opening player starts round two even after winning round one',
+      () {
+    final state = engine.start(challengerId: 'a', hostId: 'b');
+    final lastA = state.hands['a']!.first;
+    state.hands['a']!
+      ..clear()
+      ..add(lastA);
+    state.hands['b']!.clear();
+    state.lastRoundWinnerId = 'a';
+
+    engine.throwCard(state, 'a', lastA);
+
+    expect(state.phase, GamePhase.roundTwo);
     expect(state.currentPlayerId, 'a');
   });
 }

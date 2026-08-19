@@ -171,12 +171,17 @@ class GameEngine {
         !selectedBuild.isStrong &&
         !selectedBuild.isLocked &&
         !augmentingOwnBuild;
+    final upgradeAddedValue = handCard.rank +
+        selectedVisibleCards
+            .where((card) => card.rank != target)
+            .fold<int>(0, (sum, card) => sum + card.rank) +
+        effectiveOpponentCards.fold<int>(0, (sum, card) => sum + card.rank);
     final calculatedTarget = createsCompound
         ? target
         : augmentingOwnBuild
             ? selectedBuild.target
             : upgradingSimpleBuild
-                ? selectedBuild.target + addedValue
+                ? selectedBuild.target + upgradeAddedValue
                 : addedValue;
     final retainsTarget = state.hands[playerId]!
         .any((card) => card != handCard && card.rank == target);
@@ -206,7 +211,8 @@ class GameEngine {
       throw const GameRuleException('Card in construct not available');
     }
     final included = <GameCard>[...selectedVisibleCards];
-    var automaticallyStrengthened = false;
+    var automaticallyStrengthened = selectedBuild != null &&
+        included.any((tableCard) => tableCard.rank == target);
     for (final tableCard in state.looseTableCards) {
       if (!included.contains(tableCard) && tableCard.rank == target) {
         included.add(tableCard);
@@ -224,20 +230,24 @@ class GameEngine {
     state.builds.removeWhere(selectedBuilds.contains);
     final thrownBaseCards =
         included.where((card) => card.rank == target).toList();
+    final opponentTargetCards =
+        effectiveOpponentCards.where((card) => card.rank == target).toList();
     final constructingCards = <GameCard>[
       handCard,
       ...included.where((card) => card.rank != target),
+      ...effectiveOpponentCards.where((card) => card.rank != target),
     ]..sort((a, b) => b.rank.compareTo(a.rank));
     final buildCards = selectedBuild == null
         ? <GameCard>[
             ...thrownBaseCards,
             ...constructingCards,
-            ...effectiveOpponentCards
+            ...opponentTargetCards,
           ]
         : <GameCard>[
             ...previousBuildCards,
+            ...thrownBaseCards,
             ...constructingCards,
-            ...effectiveOpponentCards
+            ...opponentTargetCards,
           ];
     state.builds.add(TableBuild(
         target: target,
@@ -282,6 +292,89 @@ class GameEngine {
     _endTurn(state, playerId);
   }
 
+  bool hasVisibleBuildContinuation(
+      GameState state, String playerId, int target) {
+    if (!state.builds.any(
+            (build) => build.ownerId == playerId && build.target == target) ||
+        !state.hands[playerId]!.any((card) => card.rank == target)) {
+      return false;
+    }
+    final opponentPack = state.captured[state.opponentOf(playerId)]!;
+    for (var topCount = 0; topCount <= opponentPack.length; topCount++) {
+      final topCards = topCount == 0
+          ? <GameCard>[]
+          : opponentPack.sublist(opponentPack.length - topCount);
+      final topTotal = topCards.fold<int>(0, (sum, card) => sum + card.rank);
+      if (topTotal > target) break;
+      if (_hasSubsetTotal(state.looseTableCards, target - topTotal) &&
+          (topCards.isNotEmpty || target - topTotal > 0)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void continueBuild(GameState state, String playerId, TableBuild build,
+      List<GameCard> selectedVisibleCards,
+      [List<GameCard> opponentTopCards = const []]) {
+    if (state.phase == GamePhase.finished) {
+      throw const GameRuleException('Game has ended');
+    }
+    if (state.currentPlayerId != playerId) {
+      throw const GameRuleException('Not your turn');
+    }
+    if (!state.builds.contains(build) || build.ownerId != playerId) {
+      throw const GameRuleException('Only the build owner may continue it');
+    }
+    if (!state.hands[playerId]!.any((card) => card.rank == build.target)) {
+      throw const GameRuleException('Card in construct not available');
+    }
+    if (selectedVisibleCards
+        .any((card) => !state.looseTableCards.contains(card))) {
+      throw const GameRuleException(
+          'Selected construction cards are not visible');
+    }
+    final opponentPack = state.captured[state.opponentOf(playerId)]!;
+    final validTopSelection = opponentTopCards.length <= opponentPack.length &&
+        opponentTopCards.asMap().entries.every((entry) =>
+            opponentPack[opponentPack.length - 1 - entry.key] == entry.value);
+    final cards = [...selectedVisibleCards, ...opponentTopCards];
+    if (!validTopSelection ||
+        cards.isEmpty ||
+        cards.fold<int>(0, (sum, card) => sum + card.rank) != build.target) {
+      throw const GameRuleException(
+          'Selected cards do not complete the constructed number');
+    }
+    for (final card in selectedVisibleCards) {
+      state.looseTableCards.remove(card);
+    }
+    for (var i = 0; i < opponentTopCards.length; i++) {
+      opponentPack.removeLast();
+    }
+    cards.sort((a, b) => b.rank.compareTo(a.rank));
+    state.builds.remove(build);
+    state.builds.add(TableBuild(
+        target: build.target,
+        cards: [...build.cards, ...cards],
+        ownerId: playerId,
+        isStrong: true,
+        isLocked: build.isLocked || opponentTopCards.isNotEmpty));
+  }
+
+  bool _hasSubsetTotal(List<GameCard> cards, int target) {
+    if (target == 0) return true;
+    bool find(int index, int total) {
+      if (total == target) return true;
+      if (total > target) return false;
+      for (var i = index; i < cards.length; i++) {
+        if (find(i + 1, total + cards[i].rank)) return true;
+      }
+      return false;
+    }
+
+    return find(0, 0);
+  }
+
   void _validateTurnAndCard(GameState state, String playerId, GameCard card) {
     if (state.phase == GamePhase.finished)
       throw const GameRuleException('Game has ended');
@@ -304,8 +397,8 @@ class GameEngine {
         state.drawPile.removeRange(0, 10);
       }
       state.phase = GamePhase.roundTwo;
-      final winnerOrHost = state.lastRoundWinnerId ?? state.hostId;
-      state.currentPlayerId = state.opponentOf(winnerOrHost);
+      // The player who opened round one also opens round two.
+      state.currentPlayerId = state.challengerId;
     } else {
       final lastCapturer = state.lastRoundWinnerId;
       if (lastCapturer != null) {
