@@ -170,14 +170,11 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Enable iOS support
+        run: flutter config --enable-ios
+
       - name: Get dependencies
         run: flutter pub get
-
-      - name: Install CocoaPods
-        run: |
-          cd ios
-          pod install
-          cd ..
 
       - name: Build iOS
         run: flutter build ios --release --no-codesign
@@ -190,7 +187,7 @@ jobs:
 
 
   # =========================
-  # BUILD COMPLETE
+  # 6. BUILD COMPLETE
   # =========================
   build-complete:
     name: CAZINO Build Complete
