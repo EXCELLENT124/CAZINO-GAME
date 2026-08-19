@@ -73,7 +73,15 @@ Tests cover the 40-card deck, shuffled two-stage deal, private player projection
 
 ## Online Supabase setup
 
-The app now has two modes. Without settings it keeps using the offline demo. With Supabase settings it uses real accounts that can sign in with a unique username or email address, stored private profiles, online presence, friend requests, challenges, chat, wallets, and wagers.
+Packaged CAZINO builds use the live Supabase project by default, including Android, iOS, web, and Windows artifacts produced by GitHub Actions. Real accounts can sign in with a unique username or email address and use online presence, friend requests, challenges, chat, wallets, and wagers.
+
+The offline demonstration is opt-in for local development only:
+
+```sh
+flutter run --dart-define=CAZINO_OFFLINE_DEMO=true
+```
+
+Normal builds must never silently enter demo mode. The project URL and publishable client key have safe defaults and can still be overridden with `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY`. Never put a Supabase secret or service-role key in the Flutter application.
 
 1. Create a separate Supabase project named `CAZINO GAME` (do not use an unrelated project).
 2. Open Supabase **SQL Editor** and run `supabase/migrations/202608190001_online_cazino.sql` once.

@@ -5,12 +5,6 @@ import '../domain/game/game_state.dart';
 import '../domain/game/game_state_codec.dart';
 import 'repositories.dart';
 
-class SupabaseConfig {
-  static const url = String.fromEnvironment('SUPABASE_URL');
-  static const key = String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY');
-  static bool get configured => url.isNotEmpty && key.isNotEmpty;
-}
-
 /// Online adapter. Sensitive identity/address rows are kept in private_profiles;
 /// public lobby queries only read profiles and presence.
 class SupabaseRepository implements AppRepository {

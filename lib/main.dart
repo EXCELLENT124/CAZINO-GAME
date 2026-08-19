@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'app/app_controller.dart';
 import 'data/repositories.dart';
+import 'data/supabase_config.dart';
 import 'data/supabase_repository.dart';
 import 'domain/game/game_state.dart';
 import 'domain/game/scoring.dart';
@@ -12,7 +13,10 @@ import 'domain/models/game_card.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final AppRepository repository;
-  if (SupabaseConfig.configured) {
+  if (!SupabaseConfig.offlineDemo) {
+    if (!SupabaseConfig.configured) {
+      throw StateError('CAZINO live service configuration is missing.');
+    }
     await Supabase.initialize(
         url: SupabaseConfig.url, publishableKey: SupabaseConfig.key);
     repository = SupabaseRepository(Supabase.instance.client);
@@ -85,8 +89,7 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginState extends State<LoginScreen> {
-  final email = TextEditingController(text: 'lebo@cazino.demo'),
-      password = TextEditingController(text: 'demo123');
+  final email = TextEditingController(), password = TextEditingController();
   String? error;
   @override
   Widget build(BuildContext context) => Scaffold(
