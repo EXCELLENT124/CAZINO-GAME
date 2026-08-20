@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../domain/models/account.dart';
@@ -18,6 +20,7 @@ class SupabaseRepository implements AppRepository {
   int _coins = 0;
   RealtimeChannel? _matchChannel;
   RealtimeChannel? _challengeChannel;
+  Timer? _presenceHeartbeat;
 
   @override
   bool get isOnlineBackend => true;
@@ -64,6 +67,7 @@ class SupabaseRepository implements AppRepository {
     });
     await _loadCurrent();
     await setPresence(true);
+    _startPresenceHeartbeat();
     await claimDailyCoins();
     await refreshSocial();
     return _current!;
@@ -92,6 +96,7 @@ class SupabaseRepository implements AppRepository {
     }
     final account = await _loadCurrent();
     await setPresence(true);
+    _startPresenceHeartbeat();
     await claimDailyCoins();
     await refreshSocial();
     return account;
@@ -259,15 +264,22 @@ class SupabaseRepository implements AppRepository {
   Future<void> watchChallenges(void Function() onChanged) async {
     final existing = _challengeChannel;
     if (existing != null) await client.removeChannel(existing);
-    _challengeChannel = client.channel('my-challenges')
+    Future<void> reload() async {
+      await refreshSocial();
+      onChanged();
+    }
+    _challengeChannel = client.channel('cazino-lobby:${client.auth.currentUser!.id}')
       ..onPostgresChanges(
         event: PostgresChangeEvent.all,
         schema: 'public',
         table: 'challenges',
-        callback: (_) async {
-          await refreshSocial();
-          onChanged();
-        },
+        callback: (_) => reload(),
+      )
+      ..onPostgresChanges(
+        event: PostgresChangeEvent.all,
+        schema: 'public',
+        table: 'player_presence',
+        callback: (_) => reload(),
       )
       ..subscribe();
   }
@@ -291,8 +303,22 @@ class SupabaseRepository implements AppRepository {
   Future<void> setPresence(bool online) async =>
       client.rpc('set_player_presence', params: {'online': online});
 
+  void _startPresenceHeartbeat() {
+    _presenceHeartbeat?.cancel();
+    _presenceHeartbeat = Timer.periodic(const Duration(seconds: 30), (_) async {
+      if (client.auth.currentUser == null) return;
+      try {
+        await setPresence(true);
+      } catch (_) {
+        // A temporary connection loss is reflected by the last-seen timeout.
+      }
+    });
+  }
+
   @override
   Future<void> logout() async {
+    _presenceHeartbeat?.cancel();
+    _presenceHeartbeat = null;
     await stopWatchingMatch();
     final challengeChannel = _challengeChannel;
     _challengeChannel = null;

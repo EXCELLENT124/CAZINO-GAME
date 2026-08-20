@@ -335,6 +335,9 @@ class LobbyScreen extends StatefulWidget {
 }
 
 class _LobbyScreenState extends State<LobbyScreen> {
+  bool openingMatch = false;
+  String? lobbyError;
+
   @override
   void initState() {
     super.initState();
@@ -364,16 +367,98 @@ class _LobbyScreenState extends State<LobbyScreen> {
                   onPressed: () => Navigator.pop(context, stake),
                   child: Text('$stake coins each • ${stake * 2} coin pot')))
               .toList()));
+
+  Future<void> openChallenge(Challenge challenge) async {
+    setState(() {
+      openingMatch = true;
+      lobbyError = null;
+    });
+    try {
+      if (challenge.accepted) {
+        await widget.controller.joinOnlineChallenge(challenge);
+      } else {
+        await widget.controller.acceptOnlineChallenge(challenge);
+      }
+      if (mounted) {
+        await Navigator.push(
+            context,
+            MaterialPageRoute(
+                builder: (_) => GameScreen(controller: widget.controller)));
+      }
+    } catch (error) {
+      if (mounted) setState(() => lobbyError = '$error');
+    } finally {
+      if (mounted) setState(() => openingMatch = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final myId = widget.controller.user!.id;
+    final invitations = widget.controller.repository
+        .challengesFor(myId)
+        .where((challenge) =>
+            challenge.accepted || challenge.toPlayerId == myId)
+        .toList();
     final players = widget.controller.repository.players
-        .where((p) => p.id != widget.controller.user!.id);
+        .where((p) => p.id != widget.controller.user!.id)
+        .toList()
+      ..sort((a, b) {
+        if (a.isOnline != b.isOnline) return a.isOnline ? -1 : 1;
+        return a.displayName.compareTo(b.displayName);
+      });
     return Scaffold(
-        appBar: AppBar(title: const Text('Player lobby')),
-        body: ListView(
-            children: players
-                .map((p) => ListTile(
-                    leading: CircleAvatar(child: Text(p.firstName[0])),
+        appBar: AppBar(title: const Text('Player lobby'), actions: [
+          IconButton(
+              tooltip: 'Refresh players',
+              onPressed: widget.controller.refreshOnlinePlayers,
+              icon: const Icon(Icons.refresh))
+        ]),
+        body: players.isEmpty && invitations.isEmpty
+            ? const Center(child: Text('No other registered players yet.'))
+            : ListView(
+                children: [
+                  if (lobbyError != null)
+                    Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Text(lobbyError!,
+                            style:
+                                const TextStyle(color: Colors.redAccent))),
+                  ...invitations.map((challenge) => Card(
+                      margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                      child: ListTile(
+                          leading: const Icon(Icons.sports_esports,
+                              color: Color(0xffd4a72c)),
+                          title: Text(challenge.accepted
+                              ? 'Challenge accepted'
+                              : 'New game challenge'),
+                          subtitle: Text(
+                              '${challenge.stake} coins each • ${challenge.stake * 2} coin pot'),
+                          trailing: FilledButton(
+                              onPressed: openingMatch
+                                  ? null
+                                  : () => openChallenge(challenge),
+                              child: Text(
+                                  challenge.accepted ? 'Join' : 'Accept'))))),
+                  ...players.map((p) => ListTile(
+                    leading: Stack(clipBehavior: Clip.none, children: [
+                      CircleAvatar(child: Text(p.firstName[0])),
+                      Positioned(
+                          right: -1,
+                          bottom: -1,
+                          child: Container(
+                              width: 13,
+                              height: 13,
+                              decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: p.isOnline
+                                      ? Colors.lightGreenAccent
+                                      : Colors.grey,
+                                  border: Border.all(
+                                      color: Theme.of(context)
+                                          .scaffoldBackgroundColor,
+                                      width: 2))))
+                    ]),
                     title: Text(p.displayName),
                     subtitle: Text(
                         '${p.isOnline || !widget.controller.repository.isOnlineBackend ? 'Online' : 'Offline'}${widget.controller.repository.isFriend(p.id) ? ' • Friend' : ''}'),
@@ -390,7 +475,10 @@ class _LobbyScreenState extends State<LobbyScreen> {
                               ? Icons.people
                               : Icons.person_add)),
                       FilledButton.tonal(
-                          onPressed: () async {
+                          onPressed: !p.isOnline &&
+                                  widget.controller.repository.isOnlineBackend
+                              ? null
+                              : () async {
                             final stake = await chooseStake();
                             if (stake == null) return;
                             await widget.controller
@@ -400,7 +488,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
                                   content: Text(
                                       'Challenge sent for $stake coins each')));
                           },
-                          child: const Text('Challenge'))
+                          child: Text(p.isOnline ? 'Challenge' : 'Offline'))
                     ]),
                     onTap: () {
                       if (widget.controller.repository.isOnlineBackend) return;
@@ -411,7 +499,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
                               builder: (_) =>
                                   GameScreen(controller: widget.controller)));
                     }))
-                .toList()));
+                ]));
   }
 }
 

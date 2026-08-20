@@ -112,6 +112,8 @@ Use the same two `--dart-define` values for Android, iOS, and Windows builds. Pu
 - A recipient can accept a pending challenge. Supabase atomically escrows both stakes and creates one game session. Both players can then press **Join** on the accepted challenge.
 - Each accepted move updates the shared snapshot only when its version is current and the authenticated caller owns the current turn. Both phones receive the update through Supabase Realtime.
 - The app disables manual **Switch Player** during an online match and prevents another local action while the previous move is synchronizing.
+- Apply `202608200001_realtime_lobby_presence.sql` as well. It broadcasts presence changes, refreshes signed-in presence every 30 seconds, and treats a device as offline after 90 seconds without a heartbeat.
+- The lobby shows live green/grey status dots. Challenges can be sent only to online players; the recipient opens **Challenges**, presses **Accept**, and is taken directly into the shared match. The sender presses **Join** when the accepted invitation updates on their phone.
 - This is functional trusted-client multiplayer, not the final anti-cheat boundary. The current snapshot contains complete deterministic engine state so a technically modified client could inspect hidden cards or propose an invalid state. Do not enable purchased/cash-convertible coins until move validation and private-hand custody are moved into an authoritative Edge Function or server.
 
 ### Privacy and deferred FICA
