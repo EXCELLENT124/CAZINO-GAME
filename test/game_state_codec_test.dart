@@ -1,4 +1,5 @@
 import 'package:cazino/domain/game/game_engine.dart';
+import 'package:cazino/domain/game/game_state.dart';
 import 'package:cazino/domain/game/game_state_codec.dart';
 import 'package:test/test.dart';
 import 'dart:math';
