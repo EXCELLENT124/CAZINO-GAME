@@ -1,6 +1,10 @@
 -- The lobby view returns only players with a fresh online heartbeat. Keeping
 -- wallets out of this invoker view also preserves private wallet RLS.
-create or replace view public.online_players with (security_invoker = true) as
+-- Recreate it because older deployments used a different column order, which
+-- PostgreSQL cannot change through CREATE OR REPLACE VIEW.
+drop view if exists public.online_players;
+
+create view public.online_players with (security_invoker = true) as
 select p.id,
        p.first_name,
        p.last_name,
