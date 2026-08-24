@@ -1,6 +1,5 @@
 import 'package:cazino/app/app_controller.dart';
 import 'package:cazino/data/repositories.dart';
-import 'package:cazino/domain/models/account.dart';
 import 'package:test/test.dart';
 
 class _SignedInDemoRepository extends LocalDemoRepository {
