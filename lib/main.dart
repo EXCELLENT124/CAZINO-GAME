@@ -831,6 +831,7 @@ class _GameState extends State<GameScreen> {
   bool roundTwoDealActive = false;
   int roundTwoDealtCards = 0;
   int scoreStage = 0;
+  bool scoreAnimationStarted = false;
   @override
   void initState() {
     super.initState();
@@ -852,9 +853,16 @@ class _GameState extends State<GameScreen> {
   }
 
   void _onlineChanged() {
-    if (mounted) {
-      setState(() {
-        if (widget.controller.game?.commenced == true) introPhase = 3;
+    if (!mounted) return;
+    final finished = widget.controller.game?.phase == GamePhase.finished;
+    setState(() {
+      if (widget.controller.game?.commenced == true) introPhase = 3;
+    });
+    // Computer and realtime moves finish outside act(), so explicitly start
+    // the same scoring sequence when their controller update ends the match.
+    if (finished && !scoreAnimationStarted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !scoreAnimationStarted) _startScoreAnimation();
       });
     }
   }
@@ -1445,6 +1453,8 @@ class _GameState extends State<GameScreen> {
   }
 
   void _startScoreAnimation() {
+    if (scoreAnimationStarted) return;
+    scoreAnimationStarted = true;
     scoreTimer?.cancel();
     setState(() => scoreStage = 0);
     scoreTimer = Timer.periodic(const Duration(milliseconds: 850), (timer) {
