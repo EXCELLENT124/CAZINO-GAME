@@ -22,15 +22,26 @@ void main() {
         .start(challengerId: 'player-one', hostId: 'player-two');
     original.continuationTarget = 8;
     original.continuationDeadline = DateTime.utc(2026, 8, 24, 12, 0);
-    original.continuationLimitDeadline = DateTime.utc(2026, 8, 24, 12, 10);
     original.commenced = true;
 
     final restored = GameStateCodec.decode(GameStateCodec.encode(original));
 
     expect(restored.continuationTarget, 8);
     expect(restored.continuationDeadline, DateTime.utc(2026, 8, 24, 12, 0));
-    expect(restored.continuationLimitDeadline,
-        DateTime.utc(2026, 8, 24, 12, 10));
     expect(restored.commenced, isTrue);
+  });
+
+  test('forfeit winner and quitter survive realtime snapshot decoding', () {
+    final original = GameEngine(random: Random(9))
+        .start(challengerId: 'winner', hostId: 'quitter');
+    original.phase = GamePhase.finished;
+    original.winnerId = 'winner';
+    original.forfeitedById = 'quitter';
+
+    final restored = GameStateCodec.decode(GameStateCodec.encode(original));
+
+    expect(restored.phase, GamePhase.finished);
+    expect(restored.winnerId, 'winner');
+    expect(restored.forfeitedById, 'quitter');
   });
 }

@@ -418,7 +418,9 @@ class _LobbyScreenState extends State<LobbyScreen> {
             challenge.accepted || challenge.toPlayerId == myId)
         .toList();
     final players = widget.controller.repository.players
-        .where((p) => p.id != widget.controller.user!.id)
+        .where((p) =>
+            p.id != widget.controller.user!.id &&
+            (p.isOnline || !widget.controller.repository.isOnlineBackend))
         .toList()
       ..sort((a, b) {
         if (a.isOnline != b.isOnline) return a.isOnline ? -1 : 1;
@@ -432,7 +434,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
               icon: const Icon(Icons.refresh))
         ]),
         body: players.isEmpty && invitations.isEmpty
-            ? const Center(child: Text('No other registered players yet.'))
+            ? const Center(child: Text('No other players are online right now.'))
             : ListView(
                 children: [
                   if (lobbyError != null)
@@ -849,8 +851,8 @@ class _GameState extends State<GameScreen> {
   Widget build(BuildContext context) {
     final c = widget.controller;
     final game = c.game!;
-    if (introPhase < 3) return _buildDealIntro(context, game);
-    if (roundTwoDealActive) return _buildRoundTwoDeal(context, game);
+    if (introPhase < 3) return _guardMatchExit(_buildDealIntro(context, game));
+    if (roundTwoDealActive) return _guardMatchExit(_buildRoundTwoDeal(context, game));
     if (game.phase == GamePhase.finished) return _buildFinalScoring(game);
     final activeId = c.gamePlayerId;
     final view = c.engine.viewFor(game, activeId);
@@ -967,7 +969,7 @@ class _GameState extends State<GameScreen> {
     final opponentId = game.opponentOf(activeId);
     final opponentName = c.playerName(opponentId);
     final identityLabel = c.isOnlineMatch ? 'YOU • $activeName' : activeName;
-    return Scaffold(
+    return _guardMatchExit(Scaffold(
         appBar: AppBar(
             title: Text(
                 '$identityLabel • ${view.phase == GamePhase.roundOne ? 'FIRST ROUND' : 'SECOND ROUND'}'),
@@ -991,6 +993,12 @@ class _GameState extends State<GameScreen> {
                     },
                     icon: const Icon(Icons.swap_horiz),
                     label: const Text('SWITCH PLAYER')),
+              if (c.isOnlineMatch)
+                IconButton(
+                    tooltip: 'Quit match',
+                    onPressed: _confirmQuitMatch,
+                    icon: const Icon(Icons.exit_to_app,
+                        color: Colors.redAccent)),
               IconButton(
                   onPressed: () => Navigator.push(
                       context,
@@ -1112,8 +1120,7 @@ class _GameState extends State<GameScreen> {
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
                                       Text(
-                                          'CHECK BUILD: ${c.buildGraceSeconds}s • '
-                                          'up to ${(c.buildContinuationTotalSeconds / 60).ceil()} min left',
+                                          'CHECK BUILD: ${c.buildGraceSeconds}s',
                                           style: const TextStyle(
                                               color: Colors.lightGreenAccent,
                                               fontWeight: FontWeight.bold)),
@@ -1123,7 +1130,8 @@ class _GameState extends State<GameScreen> {
                                               ? c.endBuildContinuation
                                               : null,
                                           icon: const Icon(Icons.cancel),
-                                          label: const Text('CANCEL • END TURN'))
+                                          label: const Text(
+                                              'CANCEL TIMER • END TURN'))
                                     ])),
                           if (notice != null)
                             Padding(
@@ -1243,8 +1251,16 @@ class _GameState extends State<GameScreen> {
                                     ? 'Add to Build $constructTotal'
                                     : 'Build $constructTotal'))
                   ]))
-        ])));
+        ]))));
   }
+
+  Widget _guardMatchExit(Widget child) => PopScope(
+      canPop: !widget.controller.isOnlineMatch ||
+          widget.controller.game?.phase == GamePhase.finished,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) _confirmQuitMatch();
+      },
+      child: child);
 
   Widget _buildDealIntro(BuildContext context, GameState game) {
     final playerOne = (dealtCards + 1) ~/ 2;
@@ -1412,6 +1428,35 @@ class _GameState extends State<GameScreen> {
   }
 
   Widget _buildFinalScoring(GameState game) {
+    if (game.forfeitedById != null && game.winnerId != null) {
+      final won = game.winnerId == widget.controller.gamePlayerId;
+      return Scaffold(
+          appBar: AppBar(title: const Text('MATCH COMPLETE')),
+          body: Center(
+              child: Padding(
+                  padding: const EdgeInsets.all(28),
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(won ? Icons.emoji_events : Icons.flag,
+                        size: 80,
+                        color: won ? Colors.amber : Colors.redAccent),
+                    const SizedBox(height: 18),
+                    Text(won ? 'YOU WIN' : 'MATCH FORFEITED',
+                        style: const TextStyle(
+                            fontSize: 30, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 10),
+                    Text(won
+                        ? '${widget.controller.playerName(game.forfeitedById!)} left the match. You receive the pot.'
+                        : '${widget.controller.playerName(game.winnerId!)} wins because you left the match.',
+                        textAlign: TextAlign.center),
+                    const SizedBox(height: 24),
+                    FilledButton(
+                        onPressed: () async {
+                          await widget.controller.leaveCompletedMatch();
+                          if (context.mounted) Navigator.pop(context);
+                        },
+                        child: const Text('RETURN TO LOBBY'))
+                  ]))));
+    }
     final result = const ScoringRules().score(game.captured);
     return Scaffold(
         appBar: AppBar(title: const Text('GAME COMPLETE • POINT COUNT')),
@@ -1447,6 +1492,35 @@ class _GameState extends State<GameScreen> {
                             style: const TextStyle(fontSize: 18)),
                       ])))
             ])));
+  }
+
+  Future<void> _confirmQuitMatch() async {
+    final confirmed = await showDialog<bool>(
+            context: context,
+            builder: (dialogContext) => AlertDialog(
+                    title: const Text('Quit this match?'),
+                    content: const Text(
+                        'Leaving forfeits the match. Your opponent will win and receive the pot.'),
+                    actions: [
+                      TextButton(
+                          onPressed: () => Navigator.pop(dialogContext, false),
+                          child: const Text('STAY')),
+                      FilledButton(
+                          onPressed: () => Navigator.pop(dialogContext, true),
+                          child: const Text('QUIT AND FORFEIT'))
+                    ])) ??
+        false;
+    if (!confirmed) return;
+    try {
+      await widget.controller.quitOnlineMatch();
+      await Future<void>.delayed(Duration.zero);
+      if (mounted) Navigator.pop(context);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Unable to quit: $error')));
+      }
+    }
   }
 
   Widget _scoreCard(GameState game, ScoreResult result, String id) {

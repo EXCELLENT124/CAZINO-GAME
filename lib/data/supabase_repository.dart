@@ -153,12 +153,15 @@ class SupabaseRepository implements AppRepository {
     final rows = await client.from('online_players').select();
     _players
       ..clear()
-      ..addAll((rows as List).where((r) => r['id'] != uid).map((r) => _account(
+      ..addAll((rows as List)
+          .where((r) => r['id'] != uid && r['is_online'] == true)
+          .map((r) => _account(
           Map<String, dynamic>.from(r), null,
           online: r['is_online'] == true, balance: r['balance'] as int? ?? 0)));
     final challengeRows = await client
         .from('challenges')
         .select()
+        .inFilter('status', ['pending', 'accepted'])
         .or('from_player.eq.$uid,to_player.eq.$uid');
     _challenges
       ..clear()
@@ -228,6 +231,13 @@ class SupabaseRepository implements AppRepository {
       'next_state': GameStateCodec.encode(state),
     });
     return result as int;
+  }
+
+  @override
+  Future<String> forfeitMatch(String gameId) async {
+    final winner = await client.rpc('forfeit_game', params: {'game': gameId});
+    await _loadCurrent();
+    return winner as String;
   }
 
   @override

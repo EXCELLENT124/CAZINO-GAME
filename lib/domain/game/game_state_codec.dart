@@ -22,9 +22,9 @@ class GameStateCodec {
         'last_played_card': state.lastPlayedCard == null ? null : _card(state.lastPlayedCard!),
         'continuation_target': state.continuationTarget,
         'continuation_deadline': state.continuationDeadline?.toUtc().toIso8601String(),
-        'continuation_limit_deadline':
-            state.continuationLimitDeadline?.toUtc().toIso8601String(),
         'commenced': state.commenced,
+        'winner_id': state.winnerId,
+        'forfeited_by_id': state.forfeitedById,
         'phase': state.phase.name,
       };
 
@@ -54,9 +54,9 @@ class GameStateCodec {
     state.continuationTarget = json['continuation_target'] as int?;
     state.continuationDeadline = DateTime.tryParse(
         json['continuation_deadline']?.toString() ?? '');
-    state.continuationLimitDeadline = DateTime.tryParse(
-        json['continuation_limit_deadline']?.toString() ?? '');
     state.commenced = json['commenced'] == true;
+    state.winnerId = json['winner_id'] as String?;
+    state.forfeitedById = json['forfeited_by_id'] as String?;
     return state;
   }
 

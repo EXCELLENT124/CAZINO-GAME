@@ -38,6 +38,7 @@ abstract interface class AppRepository
       String gameId, GameState proposedState);
   Future<int> publishMatchState(
       String gameId, GameState state, int expectedVersion);
+  Future<String> forfeitMatch(String gameId);
   Future<void> watchMatch(
       String gameId, void Function(GameState state, int version) onState);
   Future<void> stopWatchingMatch();
@@ -183,6 +184,9 @@ class LocalDemoRepository implements AppRepository {
   Future<int> publishMatchState(
           String gameId, GameState state, int expectedVersion) async =>
       expectedVersion + 1;
+  @override
+  Future<String> forfeitMatch(String gameId) async =>
+      _players.firstWhere((player) => player.id != _current!.id).id;
   @override
   Future<void> watchMatch(String gameId,
       void Function(GameState state, int version) onState) async {}
