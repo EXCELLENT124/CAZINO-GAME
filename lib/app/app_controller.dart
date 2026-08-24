@@ -23,7 +23,10 @@ class AppController extends ChangeNotifier {
   bool onlineMovePending = false;
   bool get isOnlineMatch => onlineGameId != null;
   PlayerAccount? get user => repository.currentUser;
-  String get gamePlayerId => demoActivePlayerId ?? user!.id;
+  // An online client must always render and act as its authenticated user.
+  // demoActivePlayerId is only for the single-device offline demo where one
+  // person deliberately switches between both players.
+  String get gamePlayerId => isOnlineMatch ? user!.id : demoActivePlayerId ?? user!.id;
 
   Future<void> login(String email, String password) async {
     await repository.login(email, password);
@@ -207,7 +210,7 @@ class AppController extends ChangeNotifier {
 
   void _followTurn() {
     _cancelBuildGrace();
-    if (game!.phase != GamePhase.finished) {
+    if (!isOnlineMatch && game!.phase != GamePhase.finished) {
       demoActivePlayerId = game!.currentPlayerId;
     }
     notifyListeners();
@@ -218,7 +221,7 @@ class AppController extends ChangeNotifier {
         engine.hasVisibleBuildContinuation(game!, playerId, target)) {
       _pendingNextPlayerId = game!.currentPlayerId;
       game!.currentPlayerId = playerId;
-      demoActivePlayerId = playerId;
+      if (!isOnlineMatch) demoActivePlayerId = playerId;
       game!.continuationTarget = target;
       game!.continuationDeadline =
           DateTime.now().toUtc().add(const Duration(seconds: 10));
@@ -280,6 +283,6 @@ class AppController extends ChangeNotifier {
     state.continuationTarget = null;
     state.continuationDeadline = null;
     state.currentPlayerId = next;
-    demoActivePlayerId = next;
+    if (!isOnlineMatch) demoActivePlayerId = next;
   }
 }
