@@ -71,8 +71,10 @@ class AppController extends ChangeNotifier {
       game = state;
       onlineGameVersion = version;
       onlineSyncError = null;
+      _restoreBuildGraceFromState();
       notifyListeners();
     });
+    _restoreBuildGraceFromState();
     notifyListeners();
   }
 
@@ -162,7 +164,15 @@ class AppController extends ChangeNotifier {
       throw const GameRuleException('Construction continuation window ended');
     }
     engine.continueBuild(game!, gamePlayerId, build, table, opponentTopCards);
-    notifyListeners();
+    final target = game!.continuationTarget;
+    if (target == null ||
+        !engine.hasVisibleBuildContinuation(game!, gamePlayerId, target)) {
+      _completeBuildContinuation();
+    } else {
+      game!.continuationDeadline =
+          DateTime.now().toUtc().add(const Duration(seconds: 10));
+      _restoreBuildGraceFromState();
+    }
     _publishOnlineMove();
   }
 
@@ -209,19 +219,10 @@ class AppController extends ChangeNotifier {
       _pendingNextPlayerId = game!.currentPlayerId;
       game!.currentPlayerId = playerId;
       demoActivePlayerId = playerId;
-      buildGraceActive = true;
-      buildGraceSeconds = 10;
-      _buildGraceTimer?.cancel();
-      _buildGraceTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-        buildGraceSeconds--;
-        if (buildGraceSeconds <= 0) {
-          final next = _pendingNextPlayerId!;
-          _cancelBuildGrace();
-          game!.currentPlayerId = next;
-          demoActivePlayerId = next;
-        }
-        notifyListeners();
-      });
+      game!.continuationTarget = target;
+      game!.continuationDeadline =
+          DateTime.now().toUtc().add(const Duration(seconds: 10));
+      _restoreBuildGraceFromState();
     } else {
       _followTurn();
     }
@@ -234,5 +235,51 @@ class AppController extends ChangeNotifier {
     buildGraceActive = false;
     buildGraceSeconds = 0;
     _pendingNextPlayerId = null;
+  }
+
+  void commenceGame() {
+    if (game == null || game!.commenced) return;
+    game!.commenced = true;
+    notifyListeners();
+    _publishOnlineMove();
+  }
+
+  void _restoreBuildGraceFromState() {
+    _buildGraceTimer?.cancel();
+    final state = game;
+    final deadline = state?.continuationDeadline;
+    final target = state?.continuationTarget;
+    if (state == null || deadline == null || target == null) {
+      _cancelBuildGrace();
+      return;
+    }
+    _pendingNextPlayerId = state.opponentOf(state.currentPlayerId);
+    buildGraceActive = true;
+    void tick(Timer timer) {
+      final remaining = deadline.difference(DateTime.now().toUtc()).inSeconds + 1;
+      buildGraceSeconds = remaining.clamp(0, 10).toInt();
+      if (remaining <= 0) {
+        timer.cancel();
+        if (state.currentPlayerId == gamePlayerId) {
+          _completeBuildContinuation();
+          _publishOnlineMove();
+        } else {
+          buildGraceActive = false;
+        }
+      }
+      notifyListeners();
+    }
+    _buildGraceTimer = Timer.periodic(const Duration(seconds: 1), tick);
+    tick(_buildGraceTimer!);
+  }
+
+  void _completeBuildContinuation() {
+    final state = game!;
+    final next = _pendingNextPlayerId ?? state.opponentOf(state.currentPlayerId);
+    _cancelBuildGrace();
+    state.continuationTarget = null;
+    state.continuationDeadline = null;
+    state.currentPlayerId = next;
+    demoActivePlayerId = next;
   }
 }

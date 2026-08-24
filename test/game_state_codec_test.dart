@@ -16,4 +16,18 @@ void main() {
     expect(restored.drawPile, original.drawPile);
     expect(restored.phase, original.phase);
   });
+
+  test('online snapshot preserves a synchronized build continuation window', () {
+    final original = GameEngine(random: Random(7))
+        .start(challengerId: 'player-one', hostId: 'player-two');
+    original.continuationTarget = 8;
+    original.continuationDeadline = DateTime.utc(2026, 8, 24, 12, 0);
+    original.commenced = true;
+
+    final restored = GameStateCodec.decode(GameStateCodec.encode(original));
+
+    expect(restored.continuationTarget, 8);
+    expect(restored.continuationDeadline, DateTime.utc(2026, 8, 24, 12, 0));
+    expect(restored.commenced, isTrue);
+  });
 }

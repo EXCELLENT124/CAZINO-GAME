@@ -20,6 +20,9 @@ class GameStateCodec {
         'current_player_id': state.currentPlayerId,
         'last_round_winner_id': state.lastRoundWinnerId,
         'last_played_card': state.lastPlayedCard == null ? null : _card(state.lastPlayedCard!),
+        'continuation_target': state.continuationTarget,
+        'continuation_deadline': state.continuationDeadline?.toUtc().toIso8601String(),
+        'commenced': state.commenced,
         'phase': state.phase.name,
       };
 
@@ -46,6 +49,10 @@ class GameStateCodec {
     state.lastRoundWinnerId = json['last_round_winner_id'] as String?;
     final last = json['last_played_card'];
     state.lastPlayedCard = last == null ? null : _decodeCard(last);
+    state.continuationTarget = json['continuation_target'] as int?;
+    state.continuationDeadline = DateTime.tryParse(
+        json['continuation_deadline']?.toString() ?? '');
+    state.commenced = json['commenced'] == true;
     return state;
   }
 

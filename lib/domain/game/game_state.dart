@@ -29,6 +29,9 @@ class GameState {
   String currentPlayerId;
   String? lastRoundWinnerId;
   GameCard? lastPlayedCard;
+  int? continuationTarget;
+  DateTime? continuationDeadline;
+  bool commenced = false;
   GamePhase phase;
 
   String opponentOf(String id) => players.firstWhere((player) => player != id);

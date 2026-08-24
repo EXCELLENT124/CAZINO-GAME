@@ -349,7 +349,24 @@ class _LobbyScreenState extends State<LobbyScreen> {
   }
 
   void _changed() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {});
+    _openAcceptedMatchAutomatically();
+  }
+
+  void _openAcceptedMatchAutomatically() {
+    if (openingMatch || widget.controller.isOnlineMatch) return;
+    final myId = widget.controller.user!.id;
+    final accepted = widget.controller.repository
+        .challengesFor(myId)
+        .where((challenge) => challenge.accepted)
+        .firstOrNull;
+    if (accepted == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !openingMatch && !widget.controller.isOnlineMatch) {
+        openChallenge(accepted);
+      }
+    });
   }
 
   @override
@@ -524,7 +541,34 @@ class _ChallengesScreenState extends State<ChallengesScreen> {
   }
 
   void _changed() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {});
+    _openAcceptedMatchAutomatically();
+  }
+
+  void _openAcceptedMatchAutomatically() {
+    if (loading || widget.controller.isOnlineMatch) return;
+    final controller = widget.controller;
+    final accepted = controller.repository
+        .challengesFor(controller.user!.id)
+        .where((challenge) => challenge.accepted)
+        .firstOrNull;
+    if (accepted == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || loading || controller.isOnlineMatch) return;
+      setState(() => loading = true);
+      try {
+        await controller.joinOnlineChallenge(accepted);
+        if (mounted) {
+          await Navigator.push(context, MaterialPageRoute(
+              builder: (_) => GameScreen(controller: controller)));
+        }
+      } catch (e) {
+        if (mounted) setState(() => error = '$e');
+      } finally {
+        if (mounted) setState(() => loading = false);
+      }
+    });
   }
 
   @override
@@ -785,7 +829,11 @@ class _GameState extends State<GameScreen> {
   }
 
   void _onlineChanged() {
-    if (mounted) setState(() {});
+    if (mounted) {
+      setState(() {
+        if (widget.controller.game?.commenced == true) introPhase = 3;
+      });
+    }
   }
 
   @override
@@ -1249,8 +1297,11 @@ class _GameState extends State<GameScreen> {
                     Padding(
                         padding: const EdgeInsets.only(top: 12),
                         child: FilledButton.icon(
-                            onPressed: () => setState(() => introPhase = 3),
                             icon: const Icon(Icons.play_arrow),
+                            onPressed: () {
+                              widget.controller.commenceGame();
+                              setState(() => introPhase = 3);
+                            },
                             label: const Text('COMMENCE GAME'))),
                 ]))));
   }
