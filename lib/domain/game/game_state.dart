@@ -31,6 +31,7 @@ class GameState {
   GameCard? lastPlayedCard;
   int? continuationTarget;
   DateTime? continuationDeadline;
+  DateTime? continuationLimitDeadline;
   bool commenced = false;
   GamePhase phase;
 

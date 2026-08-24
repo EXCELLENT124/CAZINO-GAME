@@ -23,6 +23,15 @@ class AppController extends ChangeNotifier {
   bool onlineMovePending = false;
   bool get isOnlineMatch => onlineGameId != null;
   PlayerAccount? get user => repository.currentUser;
+  int get buildContinuationTotalSeconds {
+    final deadline = game?.continuationLimitDeadline;
+    if (deadline == null) return 0;
+    return deadline
+        .difference(DateTime.now().toUtc())
+        .inSeconds
+        .clamp(0, 600)
+        .toInt();
+  }
   // An online client must always render and act as its authenticated user.
   // demoActivePlayerId is only for the single-device offline demo where one
   // person deliberately switches between both players.
@@ -168,12 +177,14 @@ class AppController extends ChangeNotifier {
     }
     engine.continueBuild(game!, gamePlayerId, build, table, opponentTopCards);
     final target = game!.continuationTarget;
-    if (target == null ||
-        !engine.hasVisibleBuildContinuation(game!, gamePlayerId, target)) {
+    if (target == null) {
       _completeBuildContinuation();
     } else {
-      game!.continuationDeadline =
-          DateTime.now().toUtc().add(const Duration(seconds: 10));
+      final now = DateTime.now().toUtc();
+      final limit = game!.continuationLimitDeadline ??
+          now.add(const Duration(minutes: 10));
+      game!.continuationLimitDeadline = limit;
+      game!.continuationDeadline = now.add(const Duration(seconds: 10));
       _restoreBuildGraceFromState();
     }
     _publishOnlineMove();
@@ -217,14 +228,14 @@ class AppController extends ChangeNotifier {
   }
 
   void _followTurnWithBuildGrace(String playerId, int target) {
-    if (game!.phase != GamePhase.finished &&
-        engine.hasVisibleBuildContinuation(game!, playerId, target)) {
+    if (game!.phase != GamePhase.finished) {
       _pendingNextPlayerId = game!.currentPlayerId;
       game!.currentPlayerId = playerId;
       if (!isOnlineMatch) demoActivePlayerId = playerId;
       game!.continuationTarget = target;
-      game!.continuationDeadline =
-          DateTime.now().toUtc().add(const Duration(seconds: 10));
+      final now = DateTime.now().toUtc();
+      game!.continuationDeadline = now.add(const Duration(seconds: 10));
+      game!.continuationLimitDeadline = now.add(const Duration(minutes: 10));
       _restoreBuildGraceFromState();
     } else {
       _followTurn();
@@ -247,12 +258,25 @@ class AppController extends ChangeNotifier {
     _publishOnlineMove();
   }
 
+  void endBuildContinuation() {
+    if (!buildGraceActive ||
+        game == null ||
+        game!.currentPlayerId != gamePlayerId) {
+      return;
+    }
+    if (isOnlineMatch && onlineMovePending) return;
+    _completeBuildContinuation();
+    notifyListeners();
+    _publishOnlineMove();
+  }
+
   void _restoreBuildGraceFromState() {
     _buildGraceTimer?.cancel();
     final state = game;
     final deadline = state?.continuationDeadline;
+    final limitDeadline = state?.continuationLimitDeadline;
     final target = state?.continuationTarget;
-    if (state == null || deadline == null || target == null) {
+    if (state == null || deadline == null || limitDeadline == null || target == null) {
       _cancelBuildGrace();
       return;
     }
@@ -264,7 +288,17 @@ class AppController extends ChangeNotifier {
       if (remaining <= 0) {
         timer.cancel();
         if (state.currentPlayerId == gamePlayerId) {
-          _completeBuildContinuation();
+          final now = DateTime.now().toUtc();
+          final canContinue = now.isBefore(limitDeadline);
+          if (canContinue) {
+            final nextDeadline = now.add(const Duration(seconds: 10));
+            state.continuationDeadline = nextDeadline.isBefore(limitDeadline)
+                ? nextDeadline
+                : limitDeadline;
+            _restoreBuildGraceFromState();
+          } else {
+            _completeBuildContinuation();
+          }
           _publishOnlineMove();
         } else {
           buildGraceActive = false;
@@ -282,6 +316,7 @@ class AppController extends ChangeNotifier {
     _cancelBuildGrace();
     state.continuationTarget = null;
     state.continuationDeadline = null;
+    state.continuationLimitDeadline = null;
     state.currentPlayerId = next;
     if (!isOnlineMatch) demoActivePlayerId = next;
   }

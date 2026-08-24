@@ -964,10 +964,13 @@ class _GameState extends State<GameScreen> {
       }
     }
     final activeName = c.playerName(activeId);
+    final opponentId = game.opponentOf(activeId);
+    final opponentName = c.playerName(opponentId);
+    final identityLabel = c.isOnlineMatch ? 'YOU • $activeName' : activeName;
     return Scaffold(
         appBar: AppBar(
             title: Text(
-                '$activeName • ${view.phase == GamePhase.roundOne ? 'FIRST ROUND' : 'SECOND ROUND'}'),
+                '$identityLabel • ${view.phase == GamePhase.roundOne ? 'FIRST ROUND' : 'SECOND ROUND'}'),
             actions: [
               IconButton(
                   tooltip: 'Edit player names',
@@ -999,21 +1002,20 @@ class _GameState extends State<GameScreen> {
             child: Column(children: [
           Container(
               width: double.infinity,
-              color: mine
-                  ? Colors.green.withValues(alpha: .18)
-                  : Colors.orange.withValues(alpha: .18),
+              color: view.currentPlayerId == opponentId
+                  ? Colors.orange.withValues(alpha: .20)
+                  : Colors.black26,
               padding: const EdgeInsets.all(12),
               child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                        mine
-                            ? '$activeName: YOUR TURN'
-                            : '$activeName: WAITING',
+                        'OPPONENT • $opponentName',
                         style: const TextStyle(
                             fontSize: 18, fontWeight: FontWeight.bold)),
-                    Text(
-                        'Taken ${view.capturedCounts[activeId]} • Other ${view.capturedCounts[game.opponentOf(activeId)]}')
+                    Text(view.currentPlayerId == opponentId
+                        ? "OPPONENT'S TURN"
+                        : 'WAITING')
                   ])),
           if (c.onlineSyncError != null)
             MaterialBanner(content: Text(c.onlineSyncError!), actions: [
@@ -1106,11 +1108,23 @@ class _GameState extends State<GameScreen> {
                           if (c.buildGraceActive)
                             Padding(
                                 padding: const EdgeInsets.all(8),
-                                child: Text(
-                                    'CONTINUE BUILD: ${c.buildGraceSeconds}s before player switch',
-                                    style: const TextStyle(
-                                        color: Colors.lightGreenAccent,
-                                        fontWeight: FontWeight.bold))),
+                                child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Text(
+                                          'CHECK BUILD: ${c.buildGraceSeconds}s • '
+                                          'up to ${(c.buildContinuationTotalSeconds / 60).ceil()} min left',
+                                          style: const TextStyle(
+                                              color: Colors.lightGreenAccent,
+                                              fontWeight: FontWeight.bold)),
+                                      const SizedBox(width: 10),
+                                      OutlinedButton.icon(
+                                          onPressed: mine
+                                              ? c.endBuildContinuation
+                                              : null,
+                                          icon: const Icon(Icons.cancel),
+                                          label: const Text('CANCEL • END TURN'))
+                                    ])),
                           if (notice != null)
                             Padding(
                                 padding: const EdgeInsets.all(8),
@@ -1132,7 +1146,25 @@ class _GameState extends State<GameScreen> {
                         onUndo: () =>
                             setState(() => selectedOpponentCards.removeLast())),
                   ]))),
-          const Text('YOUR PRIVATE HAND'),
+          Container(
+              width: double.infinity,
+              color: mine
+                  ? Colors.green.withValues(alpha: .20)
+                  : Colors.black26,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('$identityLabel • PRIVATE HAND',
+                        style: const TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.bold)),
+                    Text(mine ? 'YOUR TURN' : 'WAITING FOR $opponentName',
+                        style: TextStyle(
+                            color: mine
+                                ? Colors.lightGreenAccent
+                                : Colors.orangeAccent,
+                            fontWeight: FontWeight.bold))
+                  ])),
           SizedBox(
               height: 126,
               child: ListView(
