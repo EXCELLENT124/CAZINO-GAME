@@ -433,10 +433,31 @@ class _LobbyScreenState extends State<LobbyScreen> {
               onPressed: widget.controller.refreshOnlinePlayers,
               icon: const Icon(Icons.refresh))
         ]),
-        body: players.isEmpty && invitations.isEmpty
-            ? const Center(child: Text('No other players are online right now.'))
-            : ListView(
+        body: ListView(
                 children: [
+                  Card(
+                      margin: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+                      child: ListTile(
+                          leading: const CircleAvatar(
+                              child: Icon(Icons.smart_toy)),
+                          title: const Text('CAZINO Computer'),
+                          subtitle: const Text(
+                              'Practice match • no coin wager • always available'),
+                          trailing: FilledButton(
+                              onPressed: () {
+                                widget.controller.startComputerGame();
+                                Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                        builder: (_) => GameScreen(
+                                            controller: widget.controller)));
+                              },
+                              child: const Text('CHALLENGE')))),
+                  if (players.isEmpty && invitations.isEmpty)
+                    const Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Text(
+                            'No human players are online right now. You can challenge the computer.')),
                   if (lobbyError != null)
                     Padding(
                         padding: const EdgeInsets.all(12),
@@ -978,7 +999,7 @@ class _GameState extends State<GameScreen> {
                   tooltip: 'Edit player names',
                   onPressed: () => _editNames(context, game),
                   icon: const Icon(Icons.edit)),
-              if (!c.isOnlineMatch)
+              if (!c.isOnlineMatch && !c.isComputerMatch)
                 TextButton.icon(
                     onPressed: () {
                       c.switchDemoPlayer();
@@ -1022,7 +1043,9 @@ class _GameState extends State<GameScreen> {
                         style: const TextStyle(
                             fontSize: 18, fontWeight: FontWeight.bold)),
                     Text(view.currentPlayerId == opponentId
-                        ? "OPPONENT'S TURN"
+                        ? c.computerThinking
+                            ? 'COMPUTER IS THINKING…'
+                            : "OPPONENT'S TURN"
                         : 'WAITING')
                   ])),
           if (c.onlineSyncError != null)
@@ -1057,9 +1080,13 @@ class _GameState extends State<GameScreen> {
                         onUndo: () =>
                             setState(() => selectedOpponentCards.removeLast())),
                     Expanded(
-                        child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
+                        child: SingleChildScrollView(
+                            primary: false,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 6),
+                            child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
                           const Text(
                               'VISIBLE TABLE • TAP CARDS OR BUILDS TO SELECT'),
                           const SizedBox(height: 12),
@@ -1116,15 +1143,18 @@ class _GameState extends State<GameScreen> {
                           if (c.buildGraceActive)
                             Padding(
                                 padding: const EdgeInsets.all(8),
-                                child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
+                                child: Wrap(
+                                    alignment: WrapAlignment.center,
+                                    crossAxisAlignment:
+                                        WrapCrossAlignment.center,
+                                    spacing: 10,
+                                    runSpacing: 6,
                                     children: [
                                       Text(
                                           'CHECK BUILD: ${c.buildGraceSeconds}s',
                                           style: const TextStyle(
                                               color: Colors.lightGreenAccent,
                                               fontWeight: FontWeight.bold)),
-                                      const SizedBox(width: 10),
                                       OutlinedButton.icon(
                                           onPressed: mine
                                               ? c.endBuildContinuation
@@ -1139,7 +1169,7 @@ class _GameState extends State<GameScreen> {
                                 child: Text(notice!,
                                     style:
                                         const TextStyle(color: Colors.amber)))
-                        ])),
+                                ]))),
                     CapturedPack(
                         label: '${c.playerName(game.hostId)}\nTAKEN CARDS',
                         cards: view.capturedPacks[game.hostId] ?? const [],

@@ -14,6 +14,10 @@ class AppController extends ChangeNotifier {
   String? demoActivePlayerId;
   final Map<String, String> demoPlayerNames = {};
   Timer? _buildGraceTimer;
+  Timer? _computerTurnTimer;
+  static const computerPlayerId = 'cazino-computer';
+  bool isComputerMatch = false;
+  bool computerThinking = false;
   bool buildGraceActive = false;
   int buildGraceSeconds = 0;
   String? _pendingNextPlayerId;
@@ -26,7 +30,9 @@ class AppController extends ChangeNotifier {
   // An online client must always render and act as its authenticated user.
   // demoActivePlayerId is only for the single-device offline demo where one
   // person deliberately switches between both players.
-  String get gamePlayerId => isOnlineMatch ? user!.id : demoActivePlayerId ?? user!.id;
+  String get gamePlayerId => isOnlineMatch || isComputerMatch
+      ? user!.id
+      : demoActivePlayerId ?? user!.id;
 
   Future<void> login(String email, String password) async {
     await repository.login(email, password);
@@ -41,6 +47,8 @@ class AppController extends ChangeNotifier {
   Future<void> logout() async {
     await repository.stopWatchingMatch();
     await repository.logout();
+    _computerTurnTimer?.cancel();
+    isComputerMatch = false;
     game = null;
     notifyListeners();
   }
@@ -60,6 +68,7 @@ class AppController extends ChangeNotifier {
         challengerId: challenge.fromPlayerId, hostId: challenge.toPlayerId);
     final loaded = await repository.initializeOrLoadMatch(gameId, proposed);
     game = loaded.state;
+    isComputerMatch = false;
     onlineGameId = gameId;
     onlineGameVersion = loaded.version;
     demoActivePlayerId = user!.id;
@@ -133,6 +142,8 @@ class AppController extends ChangeNotifier {
   }
 
   void startDemoGame(String otherId) {
+    _computerTurnTimer?.cancel();
+    isComputerMatch = false;
     onlineGameId = null;
     game = engine.start(challengerId: user!.id, hostId: otherId);
     demoActivePlayerId = user!.id;
@@ -140,6 +151,19 @@ class AppController extends ChangeNotifier {
     demoPlayerNames[otherId] = repository.players
         .firstWhere((player) => player.id == otherId)
         .displayName;
+    notifyListeners();
+  }
+
+  void startComputerGame() {
+    _computerTurnTimer?.cancel();
+    onlineGameId = null;
+    isComputerMatch = true;
+    computerThinking = false;
+    game = engine.start(
+        challengerId: user!.id, hostId: computerPlayerId);
+    demoActivePlayerId = user!.id;
+    demoPlayerNames[user!.id] = user!.displayName;
+    demoPlayerNames[computerPlayerId] = 'CAZINO Computer';
     notifyListeners();
   }
 
@@ -154,7 +178,7 @@ class AppController extends ChangeNotifier {
   }
 
   void switchDemoPlayer() {
-    if (game == null) return;
+    if (game == null || isComputerMatch) return;
     _cancelBuildGrace();
     demoActivePlayerId = game!.opponentOf(gamePlayerId);
     notifyListeners();
@@ -237,17 +261,18 @@ class AppController extends ChangeNotifier {
 
   void _followTurn() {
     _cancelBuildGrace();
-    if (!isOnlineMatch && game!.phase != GamePhase.finished) {
+    if (!isOnlineMatch && !isComputerMatch && game!.phase != GamePhase.finished) {
       demoActivePlayerId = game!.currentPlayerId;
     }
     notifyListeners();
+    _scheduleComputerTurn();
   }
 
   void _followTurnWithBuildGrace(String playerId, int target) {
     if (game!.phase != GamePhase.finished) {
       _pendingNextPlayerId = game!.currentPlayerId;
       game!.currentPlayerId = playerId;
-      if (!isOnlineMatch) demoActivePlayerId = playerId;
+      if (!isOnlineMatch && !isComputerMatch) demoActivePlayerId = playerId;
       game!.continuationTarget = target;
       final now = DateTime.now().toUtc();
       game!.continuationDeadline = now.add(const Duration(seconds: 10));
@@ -322,6 +347,77 @@ class AppController extends ChangeNotifier {
     state.continuationTarget = null;
     state.continuationDeadline = null;
     state.currentPlayerId = next;
-    if (!isOnlineMatch) demoActivePlayerId = next;
+    if (!isOnlineMatch && !isComputerMatch) demoActivePlayerId = next;
+    _scheduleComputerTurn();
+  }
+
+  void _scheduleComputerTurn() {
+    _computerTurnTimer?.cancel();
+    final state = game;
+    if (!isComputerMatch ||
+        state == null ||
+        state.phase == GamePhase.finished ||
+        state.currentPlayerId != computerPlayerId) {
+      computerThinking = false;
+      return;
+    }
+    computerThinking = true;
+    notifyListeners();
+    _computerTurnTimer = Timer(const Duration(milliseconds: 900), () {
+      final current = game;
+      if (!isComputerMatch ||
+          current == null ||
+          current.currentPlayerId != computerPlayerId ||
+          current.phase == GamePhase.finished) return;
+      _playComputerMove(current);
+      computerThinking = false;
+      notifyListeners();
+    });
+  }
+
+  void _playComputerMove(GameState state) {
+    final hand = List<GameCard>.from(state.hands[computerPlayerId]!)
+      ..sort((a, b) => b.rank.compareTo(a.rank));
+
+    // Prefer any direct chow; throwCard automatically takes matching loose
+    // cards and constructed numbers using the normal engine rules.
+    for (final card in hand) {
+      if (state.looseTableCards.any((table) => table.rank == card.rank) ||
+          state.builds.any((build) => build.target == card.rank)) {
+        engine.throwCard(state, computerPlayerId, card);
+        return;
+      }
+    }
+
+    // Then look for a visible combination whose total matches a hand card.
+    for (final card in hand) {
+      final combination = _subsetForTarget(state.looseTableCards, card.rank);
+      if (combination.isNotEmpty) {
+        engine.takeOff(state, computerPlayerId, card, combination);
+        return;
+      }
+    }
+
+    // With no capture available, drift the lowest card to preserve stronger
+    // cards for later captures.
+    hand.sort((a, b) => a.rank.compareTo(b.rank));
+    engine.throwCard(state, computerPlayerId, hand.first);
+  }
+
+  List<GameCard> _subsetForTarget(List<GameCard> cards, int target) {
+    List<GameCard>? result;
+    void search(int index, int total, List<GameCard> picked) {
+      if (result != null || total > target) return;
+      if (total == target && picked.isNotEmpty) {
+        result = List<GameCard>.from(picked);
+        return;
+      }
+      for (var i = index; i < cards.length; i++) {
+        search(i + 1, total + cards[i].rank, [...picked, cards[i]]);
+      }
+    }
+
+    search(0, 0, const []);
+    return result ?? const [];
   }
 }
