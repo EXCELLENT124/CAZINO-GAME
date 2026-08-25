@@ -926,7 +926,23 @@ class _GameState extends State<GameScreen> {
         }
       }
     }
-    final actionBuild = explicitlySelectedBuild ?? implicitOwnedBuild;
+    TableBuild? continuationOwnedBuild;
+    if (c.buildGraceActive) {
+      for (final build in view.builds) {
+        if (build.ownerId == activeId &&
+            build.target == game.continuationTarget) {
+          continuationOwnedBuild = build;
+          break;
+        }
+      }
+    }
+    // During the 10-second check the build just created is already the action
+    // target. The player only needs to select the additional cards; requiring
+    // another tap on the build made hand + opponent-top continuations appear
+    // unavailable even though the engine accepted them.
+    final actionBuild = explicitlySelectedBuild ??
+        implicitOwnedBuild ??
+        continuationOwnedBuild;
     GameCard? strongAnchor;
     for (final anchor in selectedTable) {
       final otherTotal = (selected?.rank ?? 0) +
