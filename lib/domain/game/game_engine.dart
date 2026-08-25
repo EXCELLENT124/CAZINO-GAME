@@ -151,6 +151,12 @@ class GameEngine {
     final createsCompound = (strongAnchor != null || opponentTargetAnchor) &&
         selectedBuilds.isEmpty;
     final selectedBuild = selectedBuilds.isEmpty ? null : selectedBuilds.single;
+    final ownsAnotherBuild = state.builds.any((build) =>
+        build.ownerId == playerId && !selectedBuilds.contains(build));
+    if (ownsAnotherBuild) {
+      throw const GameRuleException(
+          'Complete or capture your existing build before starting another');
+    }
     if (selectedBuild != null &&
         selectedBuild.ownerId == playerId &&
         !selectedBuild.isStrong &&
@@ -299,16 +305,25 @@ class GameEngine {
         !state.hands[playerId]!.any((card) => card.rank == target)) {
       return false;
     }
+    final hand = state.hands[playerId]!;
     final opponentPack = state.captured[state.opponentOf(playerId)]!;
-    for (var topCount = 0; topCount <= opponentPack.length; topCount++) {
-      final topCards = topCount == 0
-          ? <GameCard>[]
-          : opponentPack.sublist(opponentPack.length - topCount);
-      final topTotal = topCards.fold<int>(0, (sum, card) => sum + card.rank);
-      if (topTotal > target) break;
-      if (_hasSubsetTotal(state.looseTableCards, target - topTotal) &&
-          (topCards.isNotEmpty || target - topTotal > 0)) {
-        return true;
+    for (final handCard in <GameCard?>[null, ...hand]) {
+      if (handCard != null &&
+          !hand.any((card) => card != handCard && card.rank == target)) {
+        continue;
+      }
+      final handTotal = handCard?.rank ?? 0;
+      for (var topCount = 0; topCount <= opponentPack.length; topCount++) {
+        final topCards = topCount == 0
+            ? <GameCard>[]
+            : opponentPack.sublist(opponentPack.length - topCount);
+        final topTotal = topCards.fold<int>(0, (sum, card) => sum + card.rank);
+        final remainder = target - handTotal - topTotal;
+        if (remainder < 0) break;
+        if (_hasSubsetTotal(state.looseTableCards, remainder) &&
+            (handCard != null || topCards.isNotEmpty || remainder > 0)) {
+          return true;
+        }
       }
     }
     return false;
@@ -316,7 +331,7 @@ class GameEngine {
 
   void continueBuild(GameState state, String playerId, TableBuild build,
       List<GameCard> selectedVisibleCards,
-      [List<GameCard> opponentTopCards = const []]) {
+      [List<GameCard> opponentTopCards = const [], GameCard? handCard]) {
     if (state.phase == GamePhase.finished) {
       throw const GameRuleException('Game has ended');
     }
@@ -326,7 +341,11 @@ class GameEngine {
     if (!state.builds.contains(build) || build.ownerId != playerId) {
       throw const GameRuleException('Only the build owner may continue it');
     }
-    if (!state.hands[playerId]!.any((card) => card.rank == build.target)) {
+    if (handCard != null && !state.hands[playerId]!.contains(handCard)) {
+      throw const GameRuleException('Card is not in your hand');
+    }
+    if (!state.hands[playerId]!
+        .any((card) => card != handCard && card.rank == build.target)) {
       throw const GameRuleException('Card in construct not available');
     }
     if (selectedVisibleCards
@@ -338,7 +357,11 @@ class GameEngine {
     final validTopSelection = opponentTopCards.length <= opponentPack.length &&
         opponentTopCards.asMap().entries.every((entry) =>
             opponentPack[opponentPack.length - 1 - entry.key] == entry.value);
-    final cards = [...selectedVisibleCards, ...opponentTopCards];
+    final cards = <GameCard>[
+      if (handCard != null) handCard,
+      ...selectedVisibleCards,
+      ...opponentTopCards
+    ];
     if (!validTopSelection ||
         cards.isEmpty ||
         cards.fold<int>(0, (sum, card) => sum + card.rank) != build.target) {
@@ -348,6 +371,7 @@ class GameEngine {
     for (final card in selectedVisibleCards) {
       state.looseTableCards.remove(card);
     }
+    if (handCard != null) state.hands[playerId]!.remove(handCard);
     for (var i = 0; i < opponentTopCards.length; i++) {
       opponentPack.removeLast();
     }
@@ -359,6 +383,7 @@ class GameEngine {
         ownerId: playerId,
         isStrong: true,
         isLocked: build.isLocked || opponentTopCards.isNotEmpty));
+    if (handCard != null) state.lastPlayedCard = handCard;
   }
 
   bool _hasSubsetTotal(List<GameCard> cards, int target) {

@@ -212,12 +212,16 @@ class AppController extends ChangeNotifier {
   }
 
   void continueBuild(
-      TableBuild build, List<GameCard> table, List<GameCard> opponentTopCards) {
+      TableBuild build,
+      List<GameCard> table,
+      List<GameCard> opponentTopCards,
+      GameCard? handCard) {
     _ensureOnlineMoveReady();
     if (!buildGraceActive) {
       throw const GameRuleException('Construction continuation window ended');
     }
-    engine.continueBuild(game!, gamePlayerId, build, table, opponentTopCards);
+    engine.continueBuild(
+        game!, gamePlayerId, build, table, opponentTopCards, handCard);
     final target = game!.continuationTarget;
     if (target == null) {
       _completeBuildContinuation();

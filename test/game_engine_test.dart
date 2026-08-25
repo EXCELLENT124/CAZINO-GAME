@@ -503,6 +503,114 @@ void main() {
     expect(state.builds.single.isLocked, isTrue);
   });
 
+  test('owner continues build with a private 6 and opponent top 2', () {
+    final state = engine.start(challengerId: 'lebo', hostId: 'amina');
+    const handSix = GameCard(6, CardSuit.tree);
+    const retainedEight = GameCard(8, CardSuit.redHeart);
+    const opponentTwo = GameCard(2, CardSuit.razer);
+    state.hands['lebo']!
+      ..clear()
+      ..addAll(const [handSix, retainedEight]);
+    state.captured['amina']!.add(opponentTwo);
+    const strongEight = TableBuild(
+        target: 8,
+        ownerId: 'lebo',
+        isStrong: true,
+        cards: [
+          GameCard(5, CardSuit.tree),
+          GameCard(3, CardSuit.blackSpade),
+          GameCard(8, CardSuit.redHeart),
+        ]);
+    state.builds.add(strongEight);
+
+    expect(engine.hasVisibleBuildContinuation(state, 'lebo', 8), isTrue);
+    engine.continueBuild(state, 'lebo', strongEight, const [],
+        const [opponentTwo], handSix);
+
+    expect(state.hands['lebo'], equals(const [retainedEight]));
+    expect(state.captured['amina'], isEmpty);
+    expect(state.builds.single.cards.map((card) => card.rank),
+        equals([5, 3, 8, 6, 2]));
+    expect(state.builds.single.isStrong, isTrue);
+    expect(state.builds.single.isLocked, isTrue);
+  });
+
+  test('owner continues strong 7 with loose 4 and 3', () {
+    final state = engine.start(challengerId: 'lebo', hostId: 'amina');
+    const retainedSeven = GameCard(7, CardSuit.tree);
+    const looseFour = GameCard(4, CardSuit.redHeart);
+    const looseThree = GameCard(3, CardSuit.blackSpade);
+    state.hands['lebo']!
+      ..clear()
+      ..add(retainedSeven);
+    state.looseTableCards.addAll(const [looseFour, looseThree]);
+    const strongSeven = TableBuild(
+        target: 7,
+        ownerId: 'lebo',
+        isStrong: true,
+        cards: [
+          GameCard(5, CardSuit.razer),
+          GameCard(2, CardSuit.redHeart),
+          GameCard(7, CardSuit.blackSpade),
+        ]);
+    state.builds.add(strongSeven);
+
+    engine.continueBuild(
+        state, 'lebo', strongSeven, const [looseFour, looseThree]);
+
+    expect(state.looseTableCards, isEmpty);
+    expect(state.builds.single.cards.map((card) => card.rank),
+        equals([5, 2, 7, 4, 3]));
+  });
+
+  test('player cannot own two separate constructed numbers', () {
+    final state = engine.start(challengerId: 'lebo', hostId: 'amina');
+    const handThree = GameCard(3, CardSuit.tree);
+    const retainedFive = GameCard(5, CardSuit.redHeart);
+    const looseTwo = GameCard(2, CardSuit.blackSpade);
+    state.hands['lebo']!
+      ..clear()
+      ..addAll(const [handThree, retainedFive]);
+    state.looseTableCards.add(looseTwo);
+    state.builds.add(const TableBuild(
+        target: 7,
+        ownerId: 'lebo',
+        cards: [
+          GameCard(4, CardSuit.razer),
+          GameCard(3, CardSuit.redHeart),
+        ]));
+
+    expect(
+        () => engine.construct(
+            state, 'lebo', handThree, const [looseTwo], 5),
+        throwsA(isA<GameRuleException>()));
+  });
+
+  test('strong 5 may use a loose 5 with hand 3 and opponent top 2', () {
+    final state = engine.start(challengerId: 'lebo', hostId: 'amina');
+    const handThree = GameCard(3, CardSuit.tree);
+    const retainedFive = GameCard(5, CardSuit.redHeart);
+    const looseFive = GameCard(5, CardSuit.blackSpade);
+    const opponentTwo = GameCard(2, CardSuit.razer);
+    state.hands['lebo']!
+      ..clear()
+      ..addAll(const [handThree, retainedFive]);
+    state.looseTableCards.add(looseFive);
+    state.captured['amina']!.add(opponentTwo);
+
+    engine.construct(state, 'lebo', handThree, const [looseFive], 5,
+        const [], const [opponentTwo]);
+
+    expect(state.hands['lebo'], equals(const [retainedFive]));
+    expect(state.looseTableCards, isEmpty);
+    expect(state.captured['amina'], isEmpty);
+    expect(state.builds.single.target, 5);
+    expect(state.builds.single.isStrong, isTrue);
+    expect(state.builds.single.isLocked, isTrue);
+    expect(state.builds.single.cards.map((card) => card.rank),
+        equals([5, 3, 2]));
+  });
+
   test('new construction group is descending regardless of selection source',
       () {
     final state = engine.start(challengerId: 'a', hostId: 'b');
