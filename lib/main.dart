@@ -144,7 +144,10 @@ class _LoginState extends State<LoginScreen> {
                                                   controller:
                                                       widget.controller)));
                                   } catch (e) {
-                                    setState(() => error = '$e');
+                                    if (mounted) {
+                                      setState(() =>
+                                          error = _friendlyLoginError(e));
+                                    }
                                   }
                                 },
                                 child: const Text('Log in')),
@@ -156,6 +159,23 @@ class _LoginState extends State<LoginScreen> {
                                             controller: widget.controller))),
                                 child: const Text('Create an account')),
                           ]))))));
+}
+
+String _friendlyLoginError(Object error) {
+  final message = error.toString();
+  final lower = message.toLowerCase();
+  if (lower.contains('failed host lookup') ||
+      lower.contains('socketexception') ||
+      lower.contains('status: 0') ||
+      lower.contains('network')) {
+    return 'Unable to reach the CAZINO live service. Check that this device '
+        'has internet access, then try again.';
+  }
+  if (lower.contains('invalid login credentials') ||
+      lower.contains('invalid username or password')) {
+    return 'Invalid username/email or password.';
+  }
+  return message.replaceFirst('Exception: ', '');
 }
 
 class RegisterScreen extends StatefulWidget {
@@ -964,18 +984,29 @@ class _GameState extends State<GameScreen> {
     final opponentOwnsTarget = actionBuild == null &&
         view.builds.any((build) =>
             build.target == constructTotal && build.ownerId != activeId);
+    final ownsAnotherBuild = view.builds.any((build) =>
+        build.ownerId == activeId && build != actionBuild);
     final canBuild = mine &&
         !c.buildGraceActive &&
         selected != null &&
         (selectedTable.isNotEmpty || actionBuild != null) &&
         !opponentBuildSelected &&
-        !opponentOwnsTarget;
+        !opponentOwnsTarget &&
+        !ownsAnotherBuild;
     final automaticChow = selected != null &&
         (view.tableCards.any((card) => card.rank == selected!.rank) ||
             view.builds.any((build) => build.target == selected!.rank));
+    final continuationRetainsTarget = actionBuild != null &&
+        view.hand.any((card) =>
+            card != selected && card.rank == actionBuild.target);
     final continuationBuild = c.buildGraceActive &&
             actionBuild != null &&
             actionBuild.ownerId == activeId &&
+            continuationRetainsTarget &&
+            (selected != null ||
+                selectedTable.isNotEmpty ||
+                selectedOpponentCards.isNotEmpty) &&
+            (selected?.rank ?? 0) +
             selectedTable.fold<int>(0, (sum, card) => sum + card.rank) +
                     opponentAdded ==
                 actionBuild.target
@@ -1267,7 +1298,8 @@ class _GameState extends State<GameScreen> {
                               ? () => act(() => c.continueBuild(
                                   continuationBuild,
                                   selectedTable,
-                                  selectedOpponentCards))
+                                  selectedOpponentCards,
+                                  selected))
                               : null,
                           child: Text(actionBuild == null
                               ? 'Select your build and a complete combination'
@@ -1281,7 +1313,9 @@ class _GameState extends State<GameScreen> {
                                 actionBuild == null ? const [] : [actionBuild],
                                 selectedOpponentCards))
                             : null,
-                        child: Text(opponentBuildSelected || opponentOwnsTarget
+                        child: Text(ownsAnotherBuild
+                            ? 'Complete your existing build first'
+                            : opponentBuildSelected || opponentOwnsTarget
                             ? 'Opponent build • chow only'
                             : selectedOpponentCards.isNotEmpty
                                 ? 'Locked Strong Build $constructTotal'
