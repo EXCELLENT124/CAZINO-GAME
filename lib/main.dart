@@ -187,81 +187,171 @@ class RegisterScreen extends StatefulWidget {
 
 class _RegisterState extends State<RegisterScreen> {
   String? error;
+  bool creating = false;
   final fields = {
     for (final k in [
-      'First name',
-      'Last name',
       'Username',
       'Email',
-      'Phone',
-      'ID / passport number',
-      'Address line 1',
-      'City',
-      'Province',
-      'Postal code',
-      'Country',
-      'Password'
+      'Password',
+      'Confirm password',
     ])
       k: TextEditingController()
   };
+
+  @override
+  void dispose() {
+    for (final controller in fields.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
       appBar: AppBar(title: const Text('Create account')),
-      body: ListView(padding: const EdgeInsets.all(20), children: [
-        const Text('Create your CAZINO account',
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+      body: SafeArea(
+          child: Center(
+              child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 480),
+                  child: ListView(padding: const EdgeInsets.all(24), children: [
+        const SizedBox(height: 12),
+        const Icon(Icons.sports_esports,
+            size: 72, color: Color(0xffd4a72c)),
+        const SizedBox(height: 18),
+        const Text('Create your player account',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
         const Text(
-            'Choose a unique username. You can log in using your username or email address.'),
-        const SizedBox(height: 16),
-        ...fields.entries.map((e) => Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: TextField(
-                controller: e.value,
-                obscureText: e.key == 'Password',
-                decoration: InputDecoration(labelText: e.key)))),
+            'Choose the name other players will see. No identity or address details are required.',
+            textAlign: TextAlign.center),
+        const SizedBox(height: 28),
+        TextField(
+            controller: fields['Username'],
+            enabled: !creating,
+            textInputAction: TextInputAction.next,
+            autofillHints: const [AutofillHints.newUsername],
+            decoration: const InputDecoration(
+                labelText: 'Player username',
+                prefixIcon: Icon(Icons.person_outline),
+                helperText: '3-20 letters, numbers, or underscores')),
+        const SizedBox(height: 14),
+        TextField(
+            controller: fields['Email'],
+            enabled: !creating,
+            keyboardType: TextInputType.emailAddress,
+            textInputAction: TextInputAction.next,
+            autofillHints: const [AutofillHints.email],
+            decoration: const InputDecoration(
+                labelText: 'Email address',
+                prefixIcon: Icon(Icons.email_outlined))),
+        const SizedBox(height: 14),
+        TextField(
+            controller: fields['Password'],
+            enabled: !creating,
+            obscureText: true,
+            textInputAction: TextInputAction.next,
+            autofillHints: const [AutofillHints.newPassword],
+            decoration: const InputDecoration(
+                labelText: 'Password',
+                prefixIcon: Icon(Icons.lock_outline),
+                helperText: 'Use at least 6 characters')),
+        const SizedBox(height: 14),
+        TextField(
+            controller: fields['Confirm password'],
+            enabled: !creating,
+            obscureText: true,
+            textInputAction: TextInputAction.done,
+            decoration: const InputDecoration(
+                labelText: 'Confirm password',
+                prefixIcon: Icon(Icons.lock_reset))),
         if (error != null)
           Padding(
-              padding: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.only(top: 14),
               child: Text(error!,
+                  textAlign: TextAlign.center,
                   style: const TextStyle(color: Colors.redAccent))),
-        FilledButton(
-            onPressed: () async {
-              try {
-                final f = fields;
-                final username = f['Username']!.text.trim().toLowerCase();
-                if (!RegExp(r'^[a-z0-9_]{3,20}$').hasMatch(username)) {
-                  throw Exception(
-                      'Username must use 3-20 letters, numbers, or underscores');
-                }
-                final account = PlayerAccount(
-                    id: 'user-${DateTime.now().millisecondsSinceEpoch}',
-                    firstName: f['First name']!.text,
-                    lastName: f['Last name']!.text,
-                    username: username,
-                    email: f['Email']!.text,
-                    phone: f['Phone']!.text,
-                    idNumber: f['ID / passport number']!.text,
-                    dateOfBirth: DateTime(1990),
-                    address: Address(
-                        line1: f['Address line 1']!.text,
-                        city: f['City']!.text,
-                        province: f['Province']!.text,
-                        postalCode: f['Postal code']!.text,
-                        country: f['Country']!.text));
-                await widget.controller.register(account, f['Password']!.text);
-                if (context.mounted) {
-                  Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) =>
-                              HomeScreen(controller: widget.controller)));
-                }
-              } catch (e) {
-                if (mounted) setState(() => error = '$e');
-              }
-            },
-            child: const Text('Create account')),
-      ]));
+        const SizedBox(height: 22),
+        FilledButton.icon(
+            onPressed: creating
+                ? null
+                : () async {
+                    try {
+                      final f = fields;
+                      final username =
+                          f['Username']!.text.trim().toLowerCase();
+                      final emailAddress =
+                          f['Email']!.text.trim().toLowerCase();
+                      final password = f['Password']!.text;
+                      if (!RegExp(r'^[a-z0-9_]{3,20}$')
+                          .hasMatch(username)) {
+                        throw Exception(
+                            'Username must use 3-20 letters, numbers, or underscores');
+                      }
+                      if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+                          .hasMatch(emailAddress)) {
+                        throw Exception('Enter a valid email address');
+                      }
+                      if (password.length < 6) {
+                        throw Exception(
+                            'Password must contain at least 6 characters');
+                      }
+                      if (password != f['Confirm password']!.text) {
+                        throw Exception('Passwords do not match');
+                      }
+                      setState(() {
+                        creating = true;
+                        error = null;
+                      });
+                      final account = PlayerAccount(
+                          id: 'user-${DateTime.now().millisecondsSinceEpoch}',
+                          firstName: username,
+                          lastName: '',
+                          username: username,
+                          email: emailAddress,
+                          phone: '',
+                          idNumber: '',
+                          dateOfBirth: DateTime(1990),
+                          address: const Address(
+                              line1: '',
+                              city: '',
+                              province: '',
+                              postalCode: '',
+                              country: ''));
+                      await widget.controller.register(account, password);
+                      if (context.mounted) {
+                        Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => HomeScreen(
+                                    controller: widget.controller)));
+                      }
+                    } catch (e) {
+                      if (!mounted) return;
+                      final friendly = _friendlyLoginError(e);
+                      if (friendly.startsWith('Account created.')) {
+                        ScaffoldMessenger.of(context)
+                            .showSnackBar(SnackBar(content: Text(friendly)));
+                        Navigator.pop(context);
+                        return;
+                      }
+                      setState(() {
+                        creating = false;
+                        error = friendly;
+                      });
+                    }
+                  },
+            icon: creating
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.play_arrow),
+            label: Text(creating ? 'Creating player…' : 'Create player')),
+        const SizedBox(height: 10),
+        TextButton(
+            onPressed: creating ? null : () => Navigator.pop(context),
+            child: const Text('Already have an account? Log in')),
+      ])))));
 }
 
 class HomeScreen extends StatelessWidget {
@@ -278,7 +368,7 @@ class HomeScreen extends StatelessWidget {
             icon: const Icon(Icons.person))
       ]),
       body: ListView(padding: const EdgeInsets.all(20), children: [
-        Text('Good game, ${controller.user!.firstName}',
+        Text('Good game, ${controller.user!.displayName}',
             style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
         const SizedBox(height: 8),
         const Text(
@@ -747,22 +837,18 @@ class ProfileScreen extends StatelessWidget {
         body: ListView(padding: const EdgeInsets.all(20), children: [
           CircleAvatar(
               radius: 42,
-              child:
-                  Text(p.firstName[0], style: const TextStyle(fontSize: 32))),
+              child: Text(p.displayName[0].toUpperCase(),
+                  style: const TextStyle(fontSize: 32))),
           const SizedBox(height: 14),
           Text(p.displayName,
               textAlign: TextAlign.center,
               style:
                   const TextStyle(fontSize: 25, fontWeight: FontWeight.bold)),
           ListTile(leading: const Icon(Icons.email), title: Text(p.email)),
-          ListTile(leading: const Icon(Icons.phone), title: Text(p.phone)),
           ListTile(
-              leading: const Icon(Icons.home),
-              title: Text('${p.address.line1}, ${p.address.city}')),
-          ListTile(
-              leading: const Icon(Icons.badge),
-              title: const Text('Identity details'),
-              subtitle: const Text('Hidden for privacy')),
+              leading: const Icon(Icons.monetization_on),
+              title: Text('${controller.coinBalance} coins'),
+              subtitle: const Text('Game wallet balance')),
           OutlinedButton(
               onPressed: () async {
                 await controller.logout();

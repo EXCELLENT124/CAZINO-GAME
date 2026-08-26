@@ -7,7 +7,7 @@ import '../domain/game/game_state.dart';
 import '../domain/game/game_state_codec.dart';
 import 'repositories.dart';
 
-/// Online adapter. Sensitive identity/address rows are kept in private_profiles;
+/// Online adapter. Registration collects only game identity and login details;
 /// public lobby queries only read profiles and presence.
 class SupabaseRepository implements AppRepository {
   SupabaseRepository(this.client);
@@ -45,26 +45,18 @@ class SupabaseRepository implements AppRepository {
       email: account.email,
       password: password,
       data: {
-        'first_name': account.firstName,
-        'last_name': account.lastName,
+        'first_name': username,
+        'last_name': '',
         'username': username
       },
     );
     final id = response.user?.id;
     if (id == null)
       throw Exception('Check your email to confirm registration.');
-    await client.from('private_profiles').upsert({
-      'user_id': id,
-      'phone': account.phone,
-      'id_number': account.idNumber,
-      'date_of_birth': account.dateOfBirth.toIso8601String().substring(0, 10),
-      'address_line_1': account.address.line1,
-      'address_line_2': account.address.line2,
-      'city': account.address.city,
-      'province': account.address.province,
-      'postal_code': account.address.postalCode,
-      'country': account.address.country,
-    });
+    if (response.session == null) {
+      throw Exception(
+          'Account created. Check your email to confirm it, then log in.');
+    }
     await _loadCurrent();
     await setPresence(true);
     _startPresenceHeartbeat();
